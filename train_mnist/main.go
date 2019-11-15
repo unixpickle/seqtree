@@ -17,7 +17,6 @@ import (
 const (
 	Batch     = 10
 	ImageSize = 28
-	Horizon   = 28 * 3
 	Depth     = 3
 	Step      = 0.5
 
@@ -26,6 +25,15 @@ const (
 )
 
 func main() {
+	horizons := []int{}
+	for i := -4; i <= 4; i++ {
+		for j := 0; j <= 4; j++ {
+			if j == 0 && i < 0 {
+				continue
+			}
+			horizons = append(horizons, i+j*ImageSize)
+		}
+	}
 	dataset := mnist.LoadTrainingDataSet()
 	model := &seqtree.Model{BaseFeatures: 256}
 
@@ -38,8 +46,8 @@ func main() {
 			loss += seq.PropagateLoss()
 		}
 
-		tree := seqtree.BuildTree(seqtree.AllTimesteps(seqs...), Horizon, Depth,
-			model.NumFeatures())
+		tree := seqtree.BuildTree(seqtree.AllTimesteps(seqs...), Depth,
+			model.NumFeatures(), horizons)
 		if i < WarmupSteps {
 			model.Add(tree, WarmupStep)
 		} else {

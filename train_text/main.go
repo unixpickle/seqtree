@@ -10,15 +10,16 @@ import (
 )
 
 const (
-	Batch   = 200
-	Length  = 20
-	Horizon = 3
-	Depth   = 3
-	Step    = 0.5
+	Batch  = 200
+	Length = 20
+	Depth  = 3
+	Step   = 0.5
 
 	WarmupStep  = 5.0
 	WarmupSteps = 100
 )
+
+var Horizons = []int{0, 1, 2, 3}
 
 func main() {
 	model := &seqtree.Model{BaseFeatures: 256}
@@ -34,8 +35,8 @@ func main() {
 			loss += seq.PropagateLoss()
 		}
 
-		tree := seqtree.BuildTree(seqtree.AllTimesteps(seqs...), Horizon, Depth,
-			model.NumFeatures())
+		tree := seqtree.BuildTree(seqtree.AllTimesteps(seqs...), Depth,
+			model.NumFeatures(), Horizons)
 		if i < WarmupSteps {
 			model.Add(tree, WarmupStep)
 		} else {

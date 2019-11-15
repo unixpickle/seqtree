@@ -11,7 +11,7 @@ import (
 //
 // The nextNewFeature argument is the number of features
 // prior to adding this new tree.
-func BuildTree(timesteps []*Timestep, horizon, depth, nextNewFeature int) *Tree {
+func BuildTree(timesteps []*Timestep, depth, nextNewFeature int, horizons []int) *Tree {
 	if len(timesteps) == 0 {
 		panic("no data")
 	}
@@ -25,7 +25,7 @@ func BuildTree(timesteps []*Timestep, horizon, depth, nextNewFeature int) *Tree 
 		}
 	}
 
-	feature := OptimalFeature(timesteps, horizon)
+	feature := OptimalFeature(timesteps, horizons)
 
 	var falses, trues []*Timestep
 	for _, t := range timesteps {
@@ -38,11 +38,11 @@ func BuildTree(timesteps []*Timestep, horizon, depth, nextNewFeature int) *Tree 
 
 	if len(trues) == 0 || len(falses) == 0 {
 		// No split does any good.
-		return BuildTree(timesteps, 0, 0, nextNewFeature)
+		return BuildTree(timesteps, 0, nextNewFeature, nil)
 	}
 
-	tree1 := BuildTree(falses, horizon, depth-1, nextNewFeature)
-	tree2 := BuildTree(trues, horizon, depth-1, nextNewFeature+tree1.NumFeatures())
+	tree1 := BuildTree(falses, depth-1, nextNewFeature, horizons)
+	tree2 := BuildTree(trues, depth-1, nextNewFeature+tree1.NumFeatures(), horizons)
 
 	return &Tree{
 		Branch: &Branch{
@@ -59,10 +59,10 @@ func BuildTree(timesteps []*Timestep, horizon, depth, nextNewFeature int) *Tree 
 // This assumes that the timesteps all have a gradient
 // set.
 //
-// The horizon argument specifies how many timesteps in
+// The horizons argument specifies how many timesteps in
 // the past we may look. A value of zero indicates that
 // only the current timestep may be inspected.
-func OptimalFeature(timesteps []*Timestep, horizon int) BranchFeature {
+func OptimalFeature(timesteps []*Timestep, horizons []int) BranchFeature {
 	if len(timesteps) == 0 {
 		panic("no timesteps passed")
 	}
@@ -91,9 +91,9 @@ func OptimalFeature(timesteps []*Timestep, horizon int) BranchFeature {
 		}()
 	}
 
-	for i := 0; i <= horizon; i++ {
-		for j := 0; j < numFeatures; j++ {
-			featureChan <- BranchFeature{Feature: j, StepsInPast: i}
+	for _, horizon := range horizons {
+		for i := 0; i < numFeatures; i++ {
+			featureChan <- BranchFeature{Feature: i, StepsInPast: horizon}
 		}
 	}
 	close(featureChan)
