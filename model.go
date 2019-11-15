@@ -16,6 +16,12 @@ type Model struct {
 	Trees []*Tree
 }
 
+// NumFeatures gets the total number of features expected
+// in sequences by this model.
+func (m *Model) NumFeatures() int {
+	return m.BaseFeatures + m.ExtraFeatures
+}
+
 // Evaluate evaluates the model on the sequence.
 // At the end of the evaluation, all of the features and
 // output vectors in the sequence will be updated.

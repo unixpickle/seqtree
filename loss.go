@@ -12,7 +12,7 @@ func SoftmaxLoss(outputs, targets []float64) float64 {
 	probs := anyvec64.MakeVectorData(targets)
 	logProbs := anyvec64.MakeVectorData(outputs)
 	anyvec.LogSoftmax(logProbs, len(outputs))
-	return logProbs.Dot(probs).(float64)
+	return -logProbs.Dot(probs).(float64)
 }
 
 // SoftmaxLossGrad computes the gradient of SoftmaxLoss
@@ -21,6 +21,7 @@ func SoftmaxLossGrad(outputs, targets []float64) []float64 {
 	probs := anydiff.NewConst(anyvec64.MakeVectorData(targets))
 	logits := anydiff.NewVar(anyvec64.MakeVectorData(outputs))
 	prob := anydiff.Dot(anydiff.LogSoftmax(logits, len(outputs)), probs)
+	prob = anydiff.Scale(prob, -1.0)
 	grad := anydiff.NewGrad(logits)
 	prob.Propagate(anyvec64.MakeVectorData([]float64{1.0}), grad)
 	return grad[logits].Data().([]float64)

@@ -10,18 +10,20 @@ func MakeOneHotSequence(seq []int, outputSize, numFeatures int) *Timestep {
 	res := &Timestep{
 		Features: make([]bool, numFeatures),
 		Output:   make([]float64, outputSize),
+		Target:   make([]float64, outputSize),
 	}
 	for _, x := range seq {
-		res.Output[x] = 1.0
+		res.Target[x] = 1.0
 		res.Next = &Timestep{
 			Prev:     res,
 			Features: make([]bool, numFeatures),
 			Output:   make([]float64, outputSize),
+			Target:   make([]float64, outputSize),
 		}
 		res.Next.Features[x] = true
 		res = res.Next
 	}
-	res.Output[0] = 1.0
+	res.Target[0] = 1.0
 	return res
 }
 
@@ -74,4 +76,15 @@ func (t *Timestep) BranchFeature(b BranchFeature) bool {
 		return b.Feature == -1
 	}
 	return ts.Features[b.Feature]
+}
+
+// PropagateLoss computes the total loss for the sequence
+// and sets all of the Gradients accordingly.
+func (t *Timestep) PropagateLoss() float64 {
+	loss := SoftmaxLoss(t.Output, t.Target)
+	t.Gradient = SoftmaxLossGrad(t.Output, t.Target)
+	if t.Next != nil {
+		loss += t.Next.PropagateLoss()
+	}
+	return loss
 }
