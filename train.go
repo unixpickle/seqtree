@@ -5,6 +5,52 @@ import (
 	"sync"
 )
 
+// BuildTree builds a tree greedily for the timesteps.
+//
+// The nextNewFeature argument is the number of features
+// prior to adding this new tree.
+func BuildTree(timesteps []*Timestep, horizon, depth, nextNewFeature int) *Tree {
+	if len(timesteps) == 0 {
+		panic("no data")
+	}
+
+	if depth == 0 {
+		return &Tree{
+			Leaf: &Leaf{
+				OutputDelta: gradientMean(timesteps),
+				Feature:     nextNewFeature,
+			},
+		}
+	}
+
+	feature := OptimalFeature(timesteps, horizon)
+
+	var falses, trues []*Timestep
+	for _, t := range timesteps {
+		if t.BranchFeature(feature) {
+			trues = append(trues, t)
+		} else {
+			falses = append(falses, t)
+		}
+	}
+
+	if len(trues) == 0 || len(falses) == 0 {
+		// No split does any good.
+		return BuildTree(timesteps, 0, 0, nextNewFeature)
+	}
+
+	tree1 := BuildTree(falses, horizon, depth-1, nextNewFeature)
+	tree2 := BuildTree(trues, horizon, depth-1, nextNewFeature+tree1.NumFeatures())
+
+	return &Tree{
+		Branch: &Branch{
+			Feature:     feature,
+			FalseBranch: tree1,
+			TrueBranch:  tree2,
+		},
+	}
+}
+
 // OptimalFeature finds the optimal feature to split on in
 // order to separate the gradients of all the timesteps.
 //
@@ -90,4 +136,18 @@ func vectorNormSquared(v []float64) float64 {
 		res += x * x
 	}
 	return res
+}
+
+func gradientMean(ts []*Timestep) []float64 {
+	sum := make([]float64, len(ts[0].Gradient))
+	for _, t := range ts {
+		for j, x := range t.Gradient {
+			sum[j] += x
+		}
+	}
+	scale := 1 / float64(len(ts))
+	for i := range sum {
+		sum[i] *= scale
+	}
+	return sum
 }

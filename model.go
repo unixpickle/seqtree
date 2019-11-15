@@ -53,6 +53,20 @@ func (t *Tree) Evaluate(ts *Timestep) *Leaf {
 	}
 }
 
+// NumFeatures gets the number of new features added by
+// the tree.
+func (t *Tree) NumFeatures() int {
+	if t.Leaf != nil {
+		if t.Leaf.Feature != 0 {
+			return 1
+		} else {
+			return 0
+		}
+	} else {
+		return t.Branch.FalseBranch.NumFeatures() + t.Branch.TrueBranch.NumFeatures()
+	}
+}
+
 // Branch represents tree nodes that split into two
 // sub-nodes.
 type Branch struct {
