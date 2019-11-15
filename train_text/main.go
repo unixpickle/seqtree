@@ -14,16 +14,19 @@ func main() {
 	textData, err := ioutil.ReadFile("/usr/share/dict/words")
 	essentials.Must(err)
 
-	for {
-		seqs := SampleSequences(textData, model, 10, 20)
+	for i := 0; true; i++ {
+		seqs := SampleSequences(textData, model, 50, 20)
 		loss := 0.0
 		for _, seq := range seqs {
 			model.Evaluate(seq)
 			loss += seq.PropagateLoss()
 		}
 		tree := seqtree.BuildTree(AllTimesteps(seqs), 10, 3, model.NumFeatures())
-		model.Add(tree, 0.1)
-		log.Printf("loss=%f", loss)
+		model.Add(tree, 1.0)
+		log.Printf("step %d: loss=%f", i, loss)
+		if i%10 == 0 {
+			GenerateSequence(model, 20)
+		}
 	}
 }
 
@@ -49,4 +52,25 @@ func AllTimesteps(s []*seqtree.Timestep) []*seqtree.Timestep {
 		})
 	}
 	return res
+}
+
+func GenerateSequence(m *seqtree.Model, length int) {
+	seq := &seqtree.Timestep{
+		Output:   make([]float64, 256),
+		Features: make([]bool, m.NumFeatures()),
+	}
+	res := []byte{}
+	for i := 0; i < length; i++ {
+		m.Evaluate(seq)
+		num := seqtree.SampleSoftmax(seq.Output)
+		res = append(res, byte(num))
+		seq.Next = &seqtree.Timestep{
+			Prev:     seq,
+			Output:   make([]float64, 256),
+			Features: make([]bool, m.NumFeatures()),
+		}
+		seq.Next.Features[num] = true
+		seq = seq.Next
+	}
+	log.Println("sample:", string(res))
 }

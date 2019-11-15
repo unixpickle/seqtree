@@ -12,6 +12,7 @@ func MakeOneHotSequence(seq []int, outputSize, numFeatures int) *Timestep {
 		Output:   make([]float64, outputSize),
 		Target:   make([]float64, outputSize),
 	}
+	start := res
 	for _, x := range seq {
 		res.Target[x] = 1.0
 		res.Next = &Timestep{
@@ -24,7 +25,7 @@ func MakeOneHotSequence(seq []int, outputSize, numFeatures int) *Timestep {
 		res = res.Next
 	}
 	res.Target[0] = 1.0
-	return res
+	return start
 }
 
 // Timestep represents a single timestep in a linked-list

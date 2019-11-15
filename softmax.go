@@ -1,10 +1,29 @@
 package seqtree
 
 import (
+	"math/rand"
+
 	"github.com/unixpickle/anydiff"
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/anyvec/anyvec64"
 )
+
+// SampleSoftmax samples a softmax distribution from
+// logits.
+func SampleSoftmax(outputs []float64) int {
+	probs := anyvec64.MakeVectorData(outputs)
+	anyvec.LogSoftmax(probs, len(outputs))
+	anyvec.Exp(probs)
+	vec := probs.Data().([]float64)
+	p := rand.Float64()
+	for i, x := range vec {
+		p -= x
+		if p <= 0 {
+			return i
+		}
+	}
+	return len(vec) - 1
+}
 
 // SoftmaxLoss computes the loss function given output
 // logits and target probabilities.
