@@ -3,6 +3,8 @@ package seqtree
 import (
 	"runtime"
 	"sync"
+
+	"github.com/unixpickle/essentials"
 )
 
 // BuildTree builds a tree greedily for the timesteps.
@@ -65,6 +67,7 @@ func OptimalFeature(timesteps []*Timestep, horizon int) BranchFeature {
 		panic("no timesteps passed")
 	}
 	numFeatures := len(timesteps[0].Features)
+	gradSum := gradientSum(timesteps)
 
 	var resultLock sync.Mutex
 	var bestFeature BranchFeature
@@ -77,7 +80,7 @@ func OptimalFeature(timesteps []*Timestep, horizon int) BranchFeature {
 		go func() {
 			defer wg.Done()
 			for f := range featureChan {
-				quality := featureSplitQuality(timesteps, f)
+				quality := featureSplitQuality(timesteps, f, gradSum)
 				resultLock.Lock()
 				if quality >= bestQuality {
 					bestFeature = f
@@ -100,25 +103,18 @@ func OptimalFeature(timesteps []*Timestep, horizon int) BranchFeature {
 	return bestFeature
 }
 
-func featureSplitQuality(timesteps []*Timestep, f BranchFeature) float32 {
-	vecSize := len(timesteps[0].Output)
-
-	falseSum := make([]float32, vecSize)
-	trueSum := make([]float32, vecSize)
-
+func featureSplitQuality(timesteps []*Timestep, f BranchFeature, sum []float32) float32 {
 	falseCount := 0
 	trueCount := 0
+	featureValues := make([]bool, len(timesteps))
 
-	for _, t := range timesteps {
-		arr := falseSum
-		if t.BranchFeature(f) {
-			arr = trueSum
+	for i, t := range timesteps {
+		val := t.BranchFeature(f)
+		featureValues[i] = val
+		if val {
 			trueCount++
 		} else {
 			falseCount++
-		}
-		for i, x := range t.Gradient {
-			arr[i] += x
 		}
 	}
 
@@ -126,8 +122,25 @@ func featureSplitQuality(timesteps []*Timestep, f BranchFeature) float32 {
 		return 0
 	}
 
-	return vectorNormSquared(falseSum)/float32(falseCount) +
-		vectorNormSquared(trueSum)/float32(trueCount)
+	minoritySum := make([]float32, len(sum))
+	for i, val := range featureValues {
+		if val == (trueCount < falseCount) {
+			for j, x := range timesteps[i].Gradient {
+				minoritySum[j] += x
+			}
+		}
+	}
+
+	majoritySum := make([]float32, len(sum))
+	for i, x := range sum {
+		majoritySum[i] = x - minoritySum[i]
+	}
+
+	minorityCount := essentials.MinInt(falseCount, trueCount)
+	majorityCount := essentials.MaxInt(falseCount, trueCount)
+
+	return vectorNormSquared(minoritySum)/float32(minorityCount) +
+		vectorNormSquared(majoritySum)/float32(majorityCount)
 }
 
 func vectorNormSquared(v []float32) float32 {
@@ -138,13 +151,18 @@ func vectorNormSquared(v []float32) float32 {
 	return res
 }
 
-func gradientMean(ts []*Timestep) []float32 {
+func gradientSum(ts []*Timestep) []float32 {
 	sum := make([]float32, len(ts[0].Gradient))
 	for _, t := range ts {
 		for j, x := range t.Gradient {
 			sum[j] += x
 		}
 	}
+	return sum
+}
+
+func gradientMean(ts []*Timestep) []float32 {
+	sum := gradientSum(ts)
 	scale := 1 / float32(len(ts))
 	for i := range sum {
 		sum[i] *= scale
