@@ -1,5 +1,30 @@
 package seqtree
 
+// MakeOneHotSequence creates a sequence of Timesteps for
+// a slice of one-hot values.
+// The inputs at each timestep are the previous values,
+// and the outputs are the current values.
+// The final output is 0, and the initial input has no
+// features set.
+func MakeOneHotSequence(seq []int, outputSize, numFeatures int) *Timestep {
+	res := &Timestep{
+		Features: make([]bool, numFeatures),
+		Output:   make([]float64, outputSize),
+	}
+	for _, x := range seq {
+		res.Output[x] = 1.0
+		res.Next = &Timestep{
+			Prev:     res,
+			Features: make([]bool, numFeatures),
+			Output:   make([]float64, outputSize),
+		}
+		res.Next.Features[x] = true
+		res = res.Next
+	}
+	res.Output[0] = 1.0
+	return res
+}
+
 // Timestep represents a single timestep in a linked-list
 // representing a sequence.
 type Timestep struct {

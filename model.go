@@ -33,6 +33,14 @@ func (m *Model) Evaluate(start *Timestep) {
 	}
 }
 
+// Add adds a tree to the model, scaling it according to
+// the negative of stepSize.
+func (m *Model) Add(t *Tree, stepSize float64) {
+	t.Scale(-stepSize)
+	m.Trees = append(m.Trees, t)
+	m.ExtraFeatures += t.NumFeatures()
+}
+
 // Tree represents part of a decision tree.
 // Leaf nodes have a non-nil leaf, and branches have a
 // non-nil branch.
@@ -64,6 +72,18 @@ func (t *Tree) NumFeatures() int {
 		}
 	} else {
 		return t.Branch.FalseBranch.NumFeatures() + t.Branch.TrueBranch.NumFeatures()
+	}
+}
+
+// Scale scales the tree.
+func (t *Tree) Scale(s float64) {
+	if t.Leaf != nil {
+		for i, x := range t.Leaf.OutputDelta {
+			t.Leaf.OutputDelta[i] = x * s
+		}
+	} else {
+		t.Branch.FalseBranch.Scale(s)
+		t.Branch.TrueBranch.Scale(s)
 	}
 }
 
