@@ -1,5 +1,12 @@
 package seqtree
 
+import (
+	"runtime"
+	"sync"
+
+	"github.com/gonum/blas/blas32"
+)
+
 // A Model is a sequence prediction model.
 type Model struct {
 	// BaseFeatures is the number of features that come
@@ -29,13 +36,33 @@ func (m *Model) Evaluate(start *Timestep) {
 	for _, t := range m.Trees {
 		start.Iterate(func(ts *Timestep) {
 			leaf := t.Evaluate(ts)
-			for i, x := range leaf.OutputDelta {
-				ts.Output[i] += x
-			}
+			v1 := blas32.Vector{Inc: 1, Data: leaf.OutputDelta}
+			v2 := blas32.Vector{Inc: 1, Data: ts.Output}
+			blas32.Axpy(len(ts.Output), 1.0, v1, v2)
 			if leaf.Feature != 0 {
 				ts.Features[leaf.Feature] = true
 			}
 		})
+	}
+}
+
+// EvaluateAll evaluates the model on a list of sequences.
+func (m *Model) EvaluateAll(starts []*Timestep) {
+	ch := make(chan *Timestep, len(starts))
+	for _, x := range starts {
+		ch <- x
+	}
+	close(ch)
+
+	var wg sync.WaitGroup
+	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for ts := range ch {
+				m.Evaluate(ts)
+			}
+		}()
 	}
 }
 

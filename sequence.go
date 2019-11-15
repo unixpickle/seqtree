@@ -28,6 +28,18 @@ func MakeOneHotSequence(seq []int, outputSize, numFeatures int) *Timestep {
 	return start
 }
 
+// AllTimesteps gets all of the timesteps from all of the
+// sequences, given a list of sequence starts.
+func AllTimesteps(starts ...*Timestep) []*Timestep {
+	var res []*Timestep
+	for _, seq := range starts {
+		seq.Iterate(func(t *Timestep) {
+			res = append(res, t)
+		})
+	}
+	return res
+}
+
 // Timestep represents a single timestep in a linked-list
 // representing a sequence.
 type Timestep struct {

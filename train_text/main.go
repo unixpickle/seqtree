@@ -13,6 +13,7 @@ const (
 	Batch   = 200
 	Length  = 20
 	Horizon = 3
+	Depth   = 3
 	Step    = 0.5
 
 	WarmupStep  = 5.0
@@ -26,33 +27,22 @@ func main() {
 
 	for i := 0; true; i++ {
 		seqs := SampleSequences(textData, model, Batch, Length)
+		model.EvaluateAll(seqs)
+
 		var loss float32
 		for _, seq := range seqs {
-			model.Evaluate(seq)
 			loss += seq.PropagateLoss()
 		}
-		tree := seqtree.BuildTree(AllTimesteps(seqs), Horizon, 3, model.NumFeatures())
+
+		tree := seqtree.BuildTree(seqtree.AllTimesteps(seqs...), Horizon, Depth,
+			model.NumFeatures())
 		if i < WarmupSteps {
 			model.Add(tree, WarmupStep)
 		} else {
 			model.Add(tree, Step)
 		}
 
-		var endLoss float32
-		for _, seq := range seqs {
-			seq.Iterate(func(t *seqtree.Timestep) {
-				t.Output = make([]float32, len(t.Output))
-				for i := 256; i < len(t.Features); i++ {
-					t.Features[i] = false
-				}
-				t.Features = append(t.Features, make([]bool, tree.NumFeatures())...)
-			})
-			model.Evaluate(seq)
-			endLoss += seq.PropagateLoss()
-		}
-
-		log.Printf("step %d: loss=%f improvement=%f", i, loss/(Batch*Length),
-			(loss-endLoss)/(Batch*Length))
+		log.Printf("step %d: loss=%f", i, loss/(Batch*Length))
 		if i%10 == 0 {
 			GenerateSequence(model, 20)
 		}
@@ -69,16 +59,6 @@ func SampleSequences(t []byte, m *seqtree.Model, count, length int) []*seqtree.T
 		}
 		seq := seqtree.MakeOneHotSequence(intSeq, 256, m.ExtraFeatures+256)
 		res = append(res, seq)
-	}
-	return res
-}
-
-func AllTimesteps(s []*seqtree.Timestep) []*seqtree.Timestep {
-	var res []*seqtree.Timestep
-	for _, seq := range s {
-		seq.Iterate(func(t *seqtree.Timestep) {
-			res = append(res, t)
-		})
 	}
 	return res
 }
