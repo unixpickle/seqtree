@@ -9,21 +9,28 @@ import (
 	"github.com/unixpickle/seqtree"
 )
 
+const (
+	Batch = 50
+	Length = 20
+	Horizon = 3
+	Step = 0.5
+)
+
 func main() {
 	model := &seqtree.Model{BaseFeatures: 256}
 	textData, err := ioutil.ReadFile("/usr/share/dict/words")
 	essentials.Must(err)
 
 	for i := 0; true; i++ {
-		seqs := SampleSequences(textData, model, 50, 20)
+		seqs := SampleSequences(textData, model, Batch, Length)
 		loss := 0.0
 		for _, seq := range seqs {
 			model.Evaluate(seq)
 			loss += seq.PropagateLoss()
 		}
-		tree := seqtree.BuildTree(AllTimesteps(seqs), 10, 3, model.NumFeatures())
-		model.Add(tree, 1.0)
-		log.Printf("step %d: loss=%f", i, loss)
+		tree := seqtree.BuildTree(AllTimesteps(seqs), Horizon, 3, model.NumFeatures())
+		model.Add(tree, Step)
+		log.Printf("step %d: loss=%f", i, loss/(Batch*Length))
 		if i%10 == 0 {
 			GenerateSequence(model, 20)
 		}
