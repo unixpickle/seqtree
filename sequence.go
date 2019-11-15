@@ -9,8 +9,8 @@ package seqtree
 func MakeOneHotSequence(seq []int, outputSize, numFeatures int) *Timestep {
 	res := &Timestep{
 		Features: make([]bool, numFeatures),
-		Output:   make([]float64, outputSize),
-		Target:   make([]float64, outputSize),
+		Output:   make([]float32, outputSize),
+		Target:   make([]float32, outputSize),
 	}
 	start := res
 	for _, x := range seq {
@@ -18,8 +18,8 @@ func MakeOneHotSequence(seq []int, outputSize, numFeatures int) *Timestep {
 		res.Next = &Timestep{
 			Prev:     res,
 			Features: make([]bool, numFeatures),
-			Output:   make([]float64, outputSize),
-			Target:   make([]float64, outputSize),
+			Output:   make([]float32, outputSize),
+			Target:   make([]float32, outputSize),
 		}
 		res.Next.Features[x] = true
 		res = res.Next
@@ -44,14 +44,14 @@ type Timestep struct {
 
 	// Output is the current prediction parameter vector
 	// for this timestamp.
-	Output []float64
+	Output []float32
 
 	// The following two fields are used during training.
 	// The Target indicates the ground-truth label, and
 	// the Gradient indicates the gradient of the loss
 	// function with respect to the outputs.
-	Target   []float64
-	Gradient []float64
+	Target   []float32
+	Gradient []float32
 }
 
 // Iterate iterates over the timesteps of this model, from
@@ -81,7 +81,7 @@ func (t *Timestep) BranchFeature(b BranchFeature) bool {
 
 // PropagateLoss computes the total loss for the sequence
 // and sets all of the Gradients accordingly.
-func (t *Timestep) PropagateLoss() float64 {
+func (t *Timestep) PropagateLoss() float32 {
 	loss := SoftmaxLoss(t.Output, t.Target)
 	t.Gradient = SoftmaxLossGrad(t.Output, t.Target)
 	if t.Next != nil {

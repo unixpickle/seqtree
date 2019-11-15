@@ -41,7 +41,7 @@ func (m *Model) Evaluate(start *Timestep) {
 
 // Add adds a tree to the model, scaling it according to
 // the negative of stepSize.
-func (m *Model) Add(t *Tree, stepSize float64) {
+func (m *Model) Add(t *Tree, stepSize float32) {
 	t.Scale(-stepSize)
 	m.Trees = append(m.Trees, t)
 	m.ExtraFeatures += t.NumFeatures()
@@ -82,7 +82,7 @@ func (t *Tree) NumFeatures() int {
 }
 
 // Scale scales the tree.
-func (t *Tree) Scale(s float64) {
+func (t *Tree) Scale(s float32) {
 	if t.Leaf != nil {
 		for i, x := range t.Leaf.OutputDelta {
 			t.Leaf.OutputDelta[i] = x * s
@@ -105,7 +105,7 @@ type Branch struct {
 type Leaf struct {
 	// OutputDelta is the vector to add to the prediction
 	// outputs at the current timestep.
-	OutputDelta []float64
+	OutputDelta []float32
 
 	// If non-zero, this is a feature to set in the sample
 	// at the current timestep, in addition to the

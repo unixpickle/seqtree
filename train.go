@@ -68,7 +68,7 @@ func OptimalFeature(timesteps []*Timestep, horizon int) BranchFeature {
 
 	var resultLock sync.Mutex
 	var bestFeature BranchFeature
-	var bestQuality float64
+	var bestQuality float32
 
 	featureChan := make(chan BranchFeature, 10)
 	wg := sync.WaitGroup{}
@@ -100,11 +100,11 @@ func OptimalFeature(timesteps []*Timestep, horizon int) BranchFeature {
 	return bestFeature
 }
 
-func featureSplitQuality(timesteps []*Timestep, f BranchFeature) float64 {
+func featureSplitQuality(timesteps []*Timestep, f BranchFeature) float32 {
 	vecSize := len(timesteps[0].Output)
 
-	falseSum := make([]float64, vecSize)
-	trueSum := make([]float64, vecSize)
+	falseSum := make([]float32, vecSize)
+	trueSum := make([]float32, vecSize)
 
 	falseCount := 0
 	trueCount := 0
@@ -126,26 +126,26 @@ func featureSplitQuality(timesteps []*Timestep, f BranchFeature) float64 {
 		return 0
 	}
 
-	return vectorNormSquared(falseSum)/float64(falseCount) +
-		vectorNormSquared(trueSum)/float64(trueCount)
+	return vectorNormSquared(falseSum)/float32(falseCount) +
+		vectorNormSquared(trueSum)/float32(trueCount)
 }
 
-func vectorNormSquared(v []float64) float64 {
-	var res float64
+func vectorNormSquared(v []float32) float32 {
+	var res float32
 	for _, x := range v {
 		res += x * x
 	}
 	return res
 }
 
-func gradientMean(ts []*Timestep) []float64 {
-	sum := make([]float64, len(ts[0].Gradient))
+func gradientMean(ts []*Timestep) []float32 {
+	sum := make([]float32, len(ts[0].Gradient))
 	for _, t := range ts {
 		for j, x := range t.Gradient {
 			sum[j] += x
 		}
 	}
-	scale := 1 / float64(len(ts))
+	scale := 1 / float32(len(ts))
 	for i := range sum {
 		sum[i] *= scale
 	}
