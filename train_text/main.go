@@ -10,10 +10,13 @@ import (
 )
 
 const (
-	Batch = 50
-	Length = 20
+	Batch   = 200
+	Length  = 20
 	Horizon = 3
-	Step = 0.5
+	Step    = 0.5
+
+	WarmupStep  = 5.0
+	WarmupSteps = 100
 )
 
 func main() {
@@ -29,8 +32,27 @@ func main() {
 			loss += seq.PropagateLoss()
 		}
 		tree := seqtree.BuildTree(AllTimesteps(seqs), Horizon, 3, model.NumFeatures())
-		model.Add(tree, Step)
-		log.Printf("step %d: loss=%f", i, loss/(Batch*Length))
+		if i < WarmupSteps {
+			model.Add(tree, WarmupStep)
+		} else {
+			model.Add(tree, Step)
+		}
+
+		endLoss := 0.0
+		for _, seq := range seqs {
+			seq.Iterate(func(t *seqtree.Timestep) {
+				t.Output = make([]float64, len(t.Output))
+				for i := 256; i < len(t.Features); i++ {
+					t.Features[i] = false
+				}
+				t.Features = append(t.Features, make([]bool, tree.NumFeatures())...)
+			})
+			model.Evaluate(seq)
+			endLoss += seq.PropagateLoss()
+		}
+
+		log.Printf("step %d: loss=%f improvement=%f", i, loss/(Batch*Length),
+			(loss-endLoss)/(Batch*Length))
 		if i%10 == 0 {
 			GenerateSequence(model, 20)
 		}
