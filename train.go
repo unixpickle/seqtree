@@ -92,7 +92,7 @@ func OptimalFeature(timesteps []*TimestepSample, horizons []int) BranchFeature {
 	}
 
 	for _, horizon := range horizons {
-		for i := 0; i < numFeatures; i++ {
+		for i := -1; i < numFeatures; i++ {
 			featureChan <- BranchFeature{Feature: i, StepsInPast: horizon}
 		}
 	}
