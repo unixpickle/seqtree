@@ -80,6 +80,8 @@ func (m *Model) EvaluateAll(seqs []Sequence) {
 			}
 		}()
 	}
+
+	wg.Wait()
 }
 
 // Add adds a tree to the model, scaling it according to
