@@ -10,10 +10,11 @@ import (
 )
 
 const (
-	Batch  = 200
-	Length = 20
-	Depth  = 3
-	Step   = 0.5
+	Batch          = 200
+	Length         = 20
+	Depth          = 3
+	Step           = 0.5
+	MinLeafSamples = 2
 
 	WarmupStep  = 5.0
 	WarmupSteps = 100
@@ -35,7 +36,7 @@ func main() {
 			loss += seq.PropagateLoss()
 		}
 
-		tree := seqtree.BuildTree(seqtree.AllTimesteps(seqs...), Depth,
+		tree := seqtree.BuildTree(seqtree.AllTimesteps(seqs...), Depth, MinLeafSamples,
 			model.NumFeatures(), Horizons)
 		if i < WarmupSteps {
 			model.Add(tree, WarmupStep)

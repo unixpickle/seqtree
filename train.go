@@ -31,14 +31,19 @@ func BoundedStep(timesteps []*TimestepSample, t *Tree, maxKL, maxStep float32) f
 
 // BuildTree builds a tree greedily for the timesteps.
 //
+// The minLeafSamples argument specifies the minimum
+// number of samples there must be in order for the tree
+// to continue attempting to split the data.
+//
 // The nextNewFeature argument is the number of features
 // prior to adding this new tree.
-func BuildTree(timesteps []*TimestepSample, depth, nextNewFeature int, horizons []int) *Tree {
+func BuildTree(timesteps []*TimestepSample, depth, minLeafSamples, nextNewFeature int,
+	horizons []int) *Tree {
 	if len(timesteps) == 0 {
 		panic("no data")
 	}
 
-	if depth == 0 {
+	if depth == 0 || len(timesteps) <= minLeafSamples {
 		return &Tree{
 			Leaf: &Leaf{
 				OutputDelta: gradientMean(timesteps),
@@ -60,11 +65,11 @@ func BuildTree(timesteps []*TimestepSample, depth, nextNewFeature int, horizons 
 
 	if len(trues) == 0 || len(falses) == 0 {
 		// No split does any good.
-		return BuildTree(timesteps, 0, nextNewFeature, nil)
+		return BuildTree(timesteps, 0, minLeafSamples, nextNewFeature, nil)
 	}
 
-	tree1 := BuildTree(falses, depth-1, nextNewFeature, horizons)
-	tree2 := BuildTree(trues, depth-1, nextNewFeature+tree1.NumFeatures(), horizons)
+	tree1 := BuildTree(falses, depth-1, minLeafSamples, nextNewFeature, horizons)
+	tree2 := BuildTree(trues, depth-1, minLeafSamples, nextNewFeature+tree1.NumFeatures(), horizons)
 
 	return &Tree{
 		Branch: &Branch{

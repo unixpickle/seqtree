@@ -15,11 +15,12 @@ import (
 )
 
 const (
-	Batch     = 10
-	ImageSize = 28
-	Depth     = 3
-	MaxKL     = 0.001
-	MaxStep   = 20.0
+	Batch          = 10
+	ImageSize      = 28
+	Depth          = 4
+	MaxKL          = 0.001
+	MaxStep        = 20.0
+	MinLeafSamples = 10
 )
 
 func main() {
@@ -44,7 +45,7 @@ func main() {
 			loss += seq.PropagateLoss()
 		}
 
-		tree := seqtree.BuildTree(seqtree.AllTimesteps(seqs...), Depth,
+		tree := seqtree.BuildTree(seqtree.AllTimesteps(seqs...), Depth, MinLeafSamples,
 			model.NumFeatures(), horizons)
 
 		// Bound KL on a different batch.
