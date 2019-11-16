@@ -8,20 +8,25 @@ import (
 )
 
 // BoundedStep computes a step size that ensures that the
-// update KL divergence is less than maxKL.
+// update KL divergence is less than maxKL and that the
+// resulting loss improves.
 func BoundedStep(timesteps []*TimestepSample, t *Tree, maxKL, maxStep float32) float32 {
-	for {
+	for i := 0; i < 64; i++ {
 		var currentKL float32
+		var currentDelta float32
 		for _, ts := range timesteps {
 			leaf := t.Evaluate(ts)
 			currentKL += SoftmaxLossKL(ts.Timestep().Output, leaf.OutputDelta, -maxStep)
+			currentDelta += SoftmaxLossDelta(ts.Timestep().Output, ts.Timestep().Target,
+				leaf.OutputDelta, -maxStep)
 		}
 		currentKL /= float32(len(timesteps))
-		if currentKL <= maxKL {
+		if currentKL <= maxKL && currentDelta < 0 {
 			return maxStep
 		}
 		maxStep *= 0.8
 	}
+	return 0
 }
 
 // BuildTree builds a tree greedily for the timesteps.

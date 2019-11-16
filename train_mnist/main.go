@@ -52,7 +52,9 @@ func main() {
 		model.EvaluateAll(seqs)
 
 		stepSize := seqtree.BoundedStep(seqtree.AllTimesteps(seqs...), tree, MaxKL, MaxStep)
-		model.Add(tree, stepSize)
+		if stepSize > 0 {
+			model.Add(tree, stepSize)
+		}
 
 		log.Printf("step %d: loss=%f step_size=%f", i, loss/Batch, stepSize)
 		if i%10 == 0 {

@@ -63,3 +63,18 @@ func SoftmaxLossKL(outputs, deltas []float32, stepSize float32) float32 {
 	anyvec.Exp(newLogProbs)
 	return newLogProbs.Dot(diff).(float32)
 }
+
+// SoftmaxLossDelta computes how much the loss changes due
+// to adding deltas*stepSize to outputs.
+func SoftmaxLossDelta(outputs, targets, deltas []float32, stepSize float32) float32 {
+	targetProbs := anyvec32.MakeVectorData(targets)
+	oldLogProbs := anyvec32.MakeVectorData(outputs)
+	newLogProbs := anyvec32.MakeVectorData(deltas)
+	newLogProbs.Scale(stepSize)
+	newLogProbs.Add(oldLogProbs)
+	anyvec.LogSoftmax(oldLogProbs, len(outputs))
+	anyvec.LogSoftmax(newLogProbs, len(outputs))
+	diff := oldLogProbs.Copy()
+	diff.Sub(newLogProbs)
+	return diff.Dot(targetProbs).(float32)
+}
