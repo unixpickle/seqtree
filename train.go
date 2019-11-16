@@ -7,6 +7,23 @@ import (
 	"github.com/unixpickle/essentials"
 )
 
+// BoundedStep computes a step size that ensures that the
+// update KL divergence is less than maxKL.
+func BoundedStep(timesteps []*TimestepSample, t *Tree, maxKL, maxStep float32) float32 {
+	for {
+		var currentKL float32
+		for _, ts := range timesteps {
+			leaf := t.Evaluate(ts)
+			currentKL += SoftmaxLossKL(ts.Timestep().Output, leaf.OutputDelta, -maxStep)
+		}
+		currentKL /= float32(len(timesteps))
+		if currentKL <= maxKL {
+			return maxStep
+		}
+		maxStep *= 0.8
+	}
+}
+
 // BuildTree builds a tree greedily for the timesteps.
 //
 // The nextNewFeature argument is the number of features

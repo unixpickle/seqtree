@@ -18,10 +18,8 @@ const (
 	Batch     = 10
 	ImageSize = 28
 	Depth     = 3
-	Step      = 0.5
-
-	WarmupStep  = 5.0
-	WarmupSteps = 10
+	MaxKL     = 0.001
+	MaxStep   = 20.0
 )
 
 func main() {
@@ -48,13 +46,15 @@ func main() {
 
 		tree := seqtree.BuildTree(seqtree.AllTimesteps(seqs...), Depth,
 			model.NumFeatures(), horizons)
-		if i < WarmupSteps {
-			model.Add(tree, WarmupStep)
-		} else {
-			model.Add(tree, Step)
-		}
 
-		log.Printf("step %d: loss=%f", i, loss/Batch)
+		// Bound KL on a different batch.
+		seqs = SampleSequences(dataset, model, Batch)
+		model.EvaluateAll(seqs)
+
+		stepSize := seqtree.BoundedStep(seqtree.AllTimesteps(seqs...), tree, MaxKL, MaxStep)
+		model.Add(tree, stepSize)
+
+		log.Printf("step %d: loss=%f step_size=%f", i, loss/Batch, stepSize)
 		if i%10 == 0 {
 			GenerateSequence(model)
 		}
