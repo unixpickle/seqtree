@@ -90,7 +90,7 @@ func GenerateSequence(m *seqtree.Model) {
 					m.Evaluate(seq)
 					num := seqtree.SampleSoftmax(seq.Output)
 					if num == 1 {
-						img.SetGray(row*ImageSize+i, col*ImageSize+j, color.Gray{Y: 255})
+						img.SetGray(row*ImageSize+j, col*ImageSize+i, color.Gray{Y: 255})
 					}
 					seq.Next = &seqtree.Timestep{
 						Prev:     seq,
