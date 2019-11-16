@@ -108,18 +108,19 @@ func GenerateSequence(m *seqtree.Model) {
 			}
 			for i := 0; i < ImageSize; i++ {
 				for j := 0; j < ImageSize; j++ {
+					ts := seq[len(seq)-1]
+					ts.Features[2+j] = true
+					ts.Features[2+ImageSize+i] = true
 					m.EvaluateAt(seq, len(seq)-1)
-					num := seqtree.SampleSoftmax(seq[len(seq)-1].Output)
+					num := seqtree.SampleSoftmax(ts.Output)
 					if num == 1 {
 						img.SetGray(row*ImageSize+j, col*ImageSize+i, color.Gray{Y: 255})
 					}
-					ts := &seqtree.Timestep{
+					ts = &seqtree.Timestep{
 						Output:   make([]float32, 2),
 						Features: make([]bool, m.NumFeatures()),
 					}
 					ts.Features[num] = true
-					ts.Features[2+j] = true
-					ts.Features[2+ImageSize+i] = true
 					seq = append(seq, ts)
 				}
 			}
