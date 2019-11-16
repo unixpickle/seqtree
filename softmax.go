@@ -45,3 +45,21 @@ func SoftmaxLossGrad(outputs, targets []float32) []float32 {
 	prob.Propagate(anyvec32.MakeVectorData([]float32{1.0}), grad)
 	return grad[logits].Data().([]float32)
 }
+
+// SoftmaxLossKL computes
+//
+//     KL(softmax(outputs+deltas*stepSize)||softmax(outputs))
+//
+// This can be used to bound the KL of updates.
+func SoftmaxLossKL(outputs, deltas []float32, stepSize float32) float32 {
+	oldLogProbs := anyvec32.MakeVectorData(outputs)
+	newLogProbs := anyvec32.MakeVectorData(deltas)
+	newLogProbs.Scale(stepSize)
+	newLogProbs.Add(oldLogProbs)
+	anyvec.LogSoftmax(oldLogProbs, len(outputs))
+	anyvec.LogSoftmax(newLogProbs, len(outputs))
+	diff := newLogProbs.Copy()
+	diff.Sub(oldLogProbs)
+	anyvec.Exp(newLogProbs)
+	return newLogProbs.Dot(diff).(float32)
+}
