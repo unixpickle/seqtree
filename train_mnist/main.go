@@ -33,7 +33,7 @@ func main() {
 		}
 	}
 	dataset := mnist.LoadTrainingDataSet()
-	model := &seqtree.Model{BaseFeatures: 256}
+	model := &seqtree.Model{BaseFeatures: 2 + ImageSize*2}
 
 	for i := 0; true; i++ {
 		seqs := SampleSequences(dataset, model, Batch)
@@ -67,13 +67,29 @@ func SampleSequences(ds mnist.DataSet, m *seqtree.Model, count int) []seqtree.Se
 	var res []seqtree.Sequence
 	for i := 0; i < count; i++ {
 		sample := ds.Samples[rand.Intn(len(ds.Samples))]
-		intSeq := make([]int, len(sample.Intensities))
+		seq := seqtree.Sequence{}
+		prev := -1
 		for i, intensity := range sample.Intensities {
-			if intensity > 0.5 {
-				intSeq[i] = 1
+			x := i % ImageSize
+			y := i / ImageSize
+			ts := &seqtree.Timestep{
+				Output:   make([]float32, 2),
+				Features: make([]bool, m.NumFeatures()),
+				Target:   make([]float32, 2),
 			}
+			if prev != -1 {
+				ts.Features[prev] = true
+			}
+			ts.Features[2+x] = true
+			ts.Features[2+ImageSize+y] = true
+			if intensity > 0.5 {
+				prev = 1
+			} else {
+				prev = 0
+			}
+			ts.Target[prev] = 1.0
+			seq = append(seq, ts)
 		}
-		seq := seqtree.MakeOneHotSequence(intSeq, 2, m.NumFeatures())
 		res = append(res, seq)
 	}
 	return res
@@ -101,6 +117,8 @@ func GenerateSequence(m *seqtree.Model) {
 						Features: make([]bool, m.NumFeatures()),
 					}
 					ts.Features[num] = true
+					ts.Features[2+j] = true
+					ts.Features[2+ImageSize+i] = true
 					seq = append(seq, ts)
 				}
 			}
