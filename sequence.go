@@ -1,56 +1,59 @@
 package seqtree
 
-// MakeOneHotSequence creates a sequence of Timesteps for
-// a slice of one-hot values.
+// MakeOneHotSequence creates a sequence for a slice of
+// one-hot values.
 // The inputs at each timestep are the previous values,
 // and the outputs are the current values.
 // The final output is 0, and the initial input has no
 // features set.
-func MakeOneHotSequence(seq []int, outputSize, numFeatures int) *Timestep {
-	res := &Timestep{
+func MakeOneHotSequence(seq []int, outputSize, numFeatures int) Sequence {
+	ts := &Timestep{
 		Features: make([]bool, numFeatures),
 		Output:   make([]float32, outputSize),
 		Target:   make([]float32, outputSize),
 	}
-	start := res
+	res := Sequence{}
 	for _, x := range seq {
-		res.Target[x] = 1.0
-		res.Next = &Timestep{
-			Prev:     res,
+		ts.Target[x] = 1.0
+		res = append(res, ts)
+		ts = &Timestep{
 			Features: make([]bool, numFeatures),
 			Output:   make([]float32, outputSize),
 			Target:   make([]float32, outputSize),
 		}
-		res.Next.Features[x] = true
-		res = res.Next
+		ts.Features[x] = true
 	}
-	res.Target[0] = 1.0
-	return start
+	ts.Target[0] = 1.0
+	return append(res, ts)
 }
 
-// AllTimesteps gets all of the timesteps from all of the
-// sequences, given a list of sequence starts.
-func AllTimesteps(starts ...*Timestep) []*Timestep {
-	var res []*Timestep
-	for _, seq := range starts {
-		seq.Iterate(func(t *Timestep) {
-			res = append(res, t)
-		})
+// AllTimesteps gets all of the timestep samples from all
+// of the sequences.
+func AllTimesteps(seqs ...Sequence) []*TimestepSample {
+	var res []*TimestepSample
+	for _, seq := range seqs {
+		for i := range seq {
+			res = append(res, &TimestepSample{Sequence: seq, Index: i})
+		}
 	}
 	return res
 }
 
-// Timestep represents a single timestep in a linked-list
-// representing a sequence.
+type Sequence []*Timestep
+
+// PropagateLoss computes the mean loss for the sequence
+// and sets all of the Gradients accordingly.
+func (s Sequence) PropagateLoss() float32 {
+	var total float32
+	for _, t := range s {
+		total += SoftmaxLoss(t.Output, t.Target)
+		t.Gradient = SoftmaxLossGrad(t.Output, t.Target)
+	}
+	return total / float32(len(s))
+}
+
+// Timestep represents a single timestep in a sequence.
 type Timestep struct {
-	// Prev is the previous timestep.
-	// It is nil at the start of the sequence.
-	Prev *Timestep
-
-	// Next is the next timestep.
-	// It is nil at the end of the sequence.
-	Next *Timestep
-
 	// Features stores the current feature bitmap.
 	Features []bool
 
@@ -66,38 +69,26 @@ type Timestep struct {
 	Gradient []float32
 }
 
-// Iterate iterates over the timesteps of this model, from
-// first to last.
-func (t *Timestep) Iterate(f func(t *Timestep)) {
-	ts := t
-	for ts != nil {
-		f(ts)
-		ts = ts.Next
-	}
+// TimestepSample points to a timestep in a sequence.
+type TimestepSample struct {
+	Sequence Sequence
+	Index    int
 }
 
 // BranchFeature computes the value of the feature, which
 // may be in the past.
-func (t *Timestep) BranchFeature(b BranchFeature) bool {
-	ts := t
-	for i := 0; i < b.StepsInPast; i++ {
-		if ts != nil {
-			ts = ts.Prev
-		}
-	}
-	if ts == nil {
+func (t *TimestepSample) BranchFeature(b BranchFeature) bool {
+	if b.StepsInPast > t.Index {
 		return b.Feature == -1
 	}
+	if b.Feature == -1 {
+		return false
+	}
+	ts := t.Sequence[t.Index-b.StepsInPast]
 	return ts.Features[b.Feature]
 }
 
-// PropagateLoss computes the total loss for the sequence
-// and sets all of the Gradients accordingly.
-func (t *Timestep) PropagateLoss() float32 {
-	loss := SoftmaxLoss(t.Output, t.Target)
-	t.Gradient = SoftmaxLossGrad(t.Output, t.Target)
-	if t.Next != nil {
-		loss += t.Next.PropagateLoss()
-	}
-	return loss
+// Timestep gets the corresponding Timestep.
+func (t *TimestepSample) Timestep() *Timestep {
+	return t.Sequence[t.Index]
 }

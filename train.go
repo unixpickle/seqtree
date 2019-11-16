@@ -11,7 +11,7 @@ import (
 //
 // The nextNewFeature argument is the number of features
 // prior to adding this new tree.
-func BuildTree(timesteps []*Timestep, depth, nextNewFeature int, horizons []int) *Tree {
+func BuildTree(timesteps []*TimestepSample, depth, nextNewFeature int, horizons []int) *Tree {
 	if len(timesteps) == 0 {
 		panic("no data")
 	}
@@ -27,7 +27,7 @@ func BuildTree(timesteps []*Timestep, depth, nextNewFeature int, horizons []int)
 
 	feature := OptimalFeature(timesteps, horizons)
 
-	var falses, trues []*Timestep
+	var falses, trues []*TimestepSample
 	for _, t := range timesteps {
 		if t.BranchFeature(feature) {
 			trues = append(trues, t)
@@ -62,11 +62,11 @@ func BuildTree(timesteps []*Timestep, depth, nextNewFeature int, horizons []int)
 // The horizons argument specifies how many timesteps in
 // the past we may look. A value of zero indicates that
 // only the current timestep may be inspected.
-func OptimalFeature(timesteps []*Timestep, horizons []int) BranchFeature {
+func OptimalFeature(timesteps []*TimestepSample, horizons []int) BranchFeature {
 	if len(timesteps) == 0 {
 		panic("no timesteps passed")
 	}
-	numFeatures := len(timesteps[0].Features)
+	numFeatures := len(timesteps[0].Timestep().Features)
 	gradSum := gradientSum(timesteps)
 
 	var resultLock sync.Mutex
@@ -103,7 +103,7 @@ func OptimalFeature(timesteps []*Timestep, horizons []int) BranchFeature {
 	return bestFeature
 }
 
-func featureSplitQuality(timesteps []*Timestep, f BranchFeature, sum []float32) float32 {
+func featureSplitQuality(timesteps []*TimestepSample, f BranchFeature, sum []float32) float32 {
 	falseCount := 0
 	trueCount := 0
 	featureValues := make([]bool, len(timesteps))
@@ -125,7 +125,7 @@ func featureSplitQuality(timesteps []*Timestep, f BranchFeature, sum []float32) 
 	minoritySum := make([]float32, len(sum))
 	for i, val := range featureValues {
 		if val == (trueCount < falseCount) {
-			for j, x := range timesteps[i].Gradient {
+			for j, x := range timesteps[i].Timestep().Gradient {
 				minoritySum[j] += x
 			}
 		}
@@ -151,17 +151,17 @@ func vectorNormSquared(v []float32) float32 {
 	return res
 }
 
-func gradientSum(ts []*Timestep) []float32 {
-	sum := make([]float32, len(ts[0].Gradient))
+func gradientSum(ts []*TimestepSample) []float32 {
+	sum := make([]float32, len(ts[0].Timestep().Gradient))
 	for _, t := range ts {
-		for j, x := range t.Gradient {
+		for j, x := range t.Timestep().Gradient {
 			sum[j] += x
 		}
 	}
 	return sum
 }
 
-func gradientMean(ts []*Timestep) []float32 {
+func gradientMean(ts []*TimestepSample) []float32 {
 	sum := gradientSum(ts)
 	scale := 1 / float32(len(ts))
 	for i := range sum {

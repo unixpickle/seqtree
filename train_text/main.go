@@ -43,15 +43,15 @@ func main() {
 			model.Add(tree, Step)
 		}
 
-		log.Printf("step %d: loss=%f", i, loss/(Batch*Length))
+		log.Printf("step %d: loss=%f", i, loss/Batch)
 		if i%10 == 0 {
 			GenerateSequence(model, 20)
 		}
 	}
 }
 
-func SampleSequences(t []byte, m *seqtree.Model, count, length int) []*seqtree.Timestep {
-	var res []*seqtree.Timestep
+func SampleSequences(t []byte, m *seqtree.Model, count, length int) []seqtree.Sequence {
+	var res []seqtree.Sequence
 	for i := 0; i < count; i++ {
 		start := rand.Intn(len(t) - length)
 		intSeq := make([]int, length)
@@ -65,22 +65,23 @@ func SampleSequences(t []byte, m *seqtree.Model, count, length int) []*seqtree.T
 }
 
 func GenerateSequence(m *seqtree.Model, length int) {
-	seq := &seqtree.Timestep{
-		Output:   make([]float32, 256),
-		Features: make([]bool, m.NumFeatures()),
+	seq := seqtree.Sequence{
+		&seqtree.Timestep{
+			Output:   make([]float32, 256),
+			Features: make([]bool, m.NumFeatures()),
+		},
 	}
 	res := []byte{}
 	for i := 0; i < length; i++ {
-		m.Evaluate(seq)
-		num := seqtree.SampleSoftmax(seq.Output)
+		m.EvaluateAt(seq, len(seq)-1)
+		num := seqtree.SampleSoftmax(seq[len(seq)-1].Output)
 		res = append(res, byte(num))
-		seq.Next = &seqtree.Timestep{
-			Prev:     seq,
+		ts := &seqtree.Timestep{
 			Output:   make([]float32, 256),
 			Features: make([]bool, m.NumFeatures()),
 		}
-		seq.Next.Features[num] = true
-		seq = seq.Next
+		ts.Features[num] = true
+		seq = append(seq, ts)
 	}
 	log.Println("sample:", string(res))
 }

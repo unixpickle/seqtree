@@ -54,15 +54,15 @@ func main() {
 			model.Add(tree, Step)
 		}
 
-		log.Printf("step %d: loss=%f", i, loss/(Batch*ImageSize*ImageSize))
+		log.Printf("step %d: loss=%f", i, loss/Batch)
 		if i%10 == 0 {
 			GenerateSequence(model)
 		}
 	}
 }
 
-func SampleSequences(ds mnist.DataSet, m *seqtree.Model, count int) []*seqtree.Timestep {
-	var res []*seqtree.Timestep
+func SampleSequences(ds mnist.DataSet, m *seqtree.Model, count int) []seqtree.Sequence {
+	var res []seqtree.Sequence
 	for i := 0; i < count; i++ {
 		sample := ds.Samples[rand.Intn(len(ds.Samples))]
 		intSeq := make([]int, len(sample.Intensities))
@@ -81,24 +81,25 @@ func GenerateSequence(m *seqtree.Model) {
 	img := image.NewGray(image.Rect(0, 0, ImageSize*4, ImageSize*4))
 	for row := 0; row < 4; row++ {
 		for col := 0; col < 4; col++ {
-			seq := &seqtree.Timestep{
-				Output:   make([]float32, 2),
-				Features: make([]bool, m.NumFeatures()),
+			seq := seqtree.Sequence{
+				&seqtree.Timestep{
+					Output:   make([]float32, 2),
+					Features: make([]bool, m.NumFeatures()),
+				},
 			}
 			for i := 0; i < ImageSize; i++ {
 				for j := 0; j < ImageSize; j++ {
-					m.Evaluate(seq)
-					num := seqtree.SampleSoftmax(seq.Output)
+					m.EvaluateAt(seq, len(seq)-1)
+					num := seqtree.SampleSoftmax(seq[len(seq)-1].Output)
 					if num == 1 {
 						img.SetGray(row*ImageSize+j, col*ImageSize+i, color.Gray{Y: 255})
 					}
-					seq.Next = &seqtree.Timestep{
-						Prev:     seq,
+					ts := &seqtree.Timestep{
 						Output:   make([]float32, 2),
 						Features: make([]bool, m.NumFeatures()),
 					}
-					seq.Next.Features[num] = true
-					seq = seq.Next
+					ts.Features[num] = true
+					seq = append(seq, ts)
 				}
 			}
 		}

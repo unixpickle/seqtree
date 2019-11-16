@@ -32,24 +32,40 @@ func (m *Model) NumFeatures() int {
 // Evaluate evaluates the model on the sequence.
 // At the end of the evaluation, all of the features and
 // output vectors in the sequence will be updated.
-func (m *Model) Evaluate(start *Timestep) {
+func (m *Model) Evaluate(seq Sequence) {
 	for _, t := range m.Trees {
-		start.Iterate(func(ts *Timestep) {
-			leaf := t.Evaluate(ts)
+		for i, ts := range seq {
+			leaf := t.Evaluate(&TimestepSample{Sequence: seq, Index: i})
 			v1 := blas32.Vector{Inc: 1, Data: leaf.OutputDelta}
 			v2 := blas32.Vector{Inc: 1, Data: ts.Output}
 			blas32.Axpy(len(ts.Output), 1.0, v1, v2)
 			if leaf.Feature != 0 {
 				ts.Features[leaf.Feature] = true
 			}
-		})
+		}
+	}
+}
+
+// EvaluateAt is like Evaluate(), but it starts at the
+// given index of the sequence.
+func (m *Model) EvaluateAt(seq Sequence, start int) {
+	for _, t := range m.Trees {
+		for i, ts := range seq[start:] {
+			leaf := t.Evaluate(&TimestepSample{Sequence: seq, Index: i + start})
+			v1 := blas32.Vector{Inc: 1, Data: leaf.OutputDelta}
+			v2 := blas32.Vector{Inc: 1, Data: ts.Output}
+			blas32.Axpy(len(ts.Output), 1.0, v1, v2)
+			if leaf.Feature != 0 {
+				ts.Features[leaf.Feature] = true
+			}
+		}
 	}
 }
 
 // EvaluateAll evaluates the model on a list of sequences.
-func (m *Model) EvaluateAll(starts []*Timestep) {
-	ch := make(chan *Timestep, len(starts))
-	for _, x := range starts {
+func (m *Model) EvaluateAll(seqs []Sequence) {
+	ch := make(chan Sequence, len(seqs))
+	for _, x := range seqs {
 		ch <- x
 	}
 	close(ch)
@@ -59,8 +75,8 @@ func (m *Model) EvaluateAll(starts []*Timestep) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for ts := range ch {
-				m.Evaluate(ts)
+			for seq := range ch {
+				m.Evaluate(seq)
 			}
 		}()
 	}
@@ -83,7 +99,7 @@ type Tree struct {
 }
 
 // Evaluate runs the tree for the timestep.
-func (t *Tree) Evaluate(ts *Timestep) *Leaf {
+func (t *Tree) Evaluate(ts *TimestepSample) *Leaf {
 	if t.Leaf != nil {
 		return t.Leaf
 	}
