@@ -15,11 +15,11 @@ import (
 )
 
 const (
-	Batch          = 10
+	Batch          = 2000
 	ImageSize      = 28
 	Depth          = 4
-	MaxKL          = 0.001
-	MaxStep        = 20.0
+	MaxKL          = 0.01
+	MaxStep        = 0.5
 	MinLeafSamples = 10
 )
 
