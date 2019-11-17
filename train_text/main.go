@@ -36,8 +36,8 @@ func main() {
 			loss += seq.PropagateLoss()
 		}
 
-		tree := seqtree.BuildTree(seqtree.AllTimesteps(seqs...), Depth, MinLeafSamples,
-			model.NumFeatures(), Horizons)
+		tree := seqtree.BuildTree(model, seqtree.AllTimesteps(seqs...), Depth, MinLeafSamples,
+			Horizons)
 		if i < WarmupSteps {
 			model.Add(tree, WarmupStep)
 		} else {

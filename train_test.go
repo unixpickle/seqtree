@@ -10,8 +10,9 @@ func BenchmarkBuildTreeDense(b *testing.B) {
 	for i := range seqInts {
 		seqInts[i] = rand.Intn(2)
 	}
+	m := &Model{BaseFeatures: 2, ExtraFeatures: 1337}
 	seq := MakeOneHotSequence(seqInts, 2, 2)
 	for i := 0; i <= b.N; i++ {
-		BuildTree(AllTimesteps(seq), 3, 1, 2, []int{0, 1, 2, 28, 29, 30, 56, 57, 58})
+		BuildTree(m, AllTimesteps(seq), 3, 1, []int{0, 1, 2, 28, 29, 30, 56, 57, 58})
 	}
 }

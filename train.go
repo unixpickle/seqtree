@@ -1,6 +1,8 @@
 package seqtree
 
 import (
+	"math"
+	"math/rand"
 	"runtime"
 	"sync"
 
@@ -34,11 +36,13 @@ func BoundedStep(timesteps []*TimestepSample, t *Tree, maxKL, maxStep float32) f
 // The minLeafSamples argument specifies the minimum
 // number of samples there must be in order for the tree
 // to continue attempting to split the data.
-//
-// The nextNewFeature argument is the number of features
-// prior to adding this new tree.
-func BuildTree(timesteps []*TimestepSample, depth, minLeafSamples, nextNewFeature int,
+func BuildTree(m *Model, timesteps []*TimestepSample, depth, minLeafSamples int,
 	horizons []int) *Tree {
+	return buildTree(timesteps, depth, minLeafSamples, m.NumFeatures(), m.ExtraFeatures, horizons)
+}
+
+func buildTree(timesteps []*TimestepSample, depth, minLeafSamples, nextNewFeature int,
+	extraFeatures int, horizons []int) *Tree {
 	if len(timesteps) == 0 {
 		panic("no data")
 	}
@@ -52,7 +56,7 @@ func BuildTree(timesteps []*TimestepSample, depth, minLeafSamples, nextNewFeatur
 		}
 	}
 
-	feature := OptimalFeature(timesteps, horizons)
+	feature := optimalFeature(timesteps, extraFeatures, horizons)
 
 	var falses, trues []*TimestepSample
 	for _, t := range timesteps {
@@ -65,11 +69,12 @@ func BuildTree(timesteps []*TimestepSample, depth, minLeafSamples, nextNewFeatur
 
 	if len(trues) == 0 || len(falses) == 0 {
 		// No split does any good.
-		return BuildTree(timesteps, 0, minLeafSamples, nextNewFeature, nil)
+		return buildTree(timesteps, 0, minLeafSamples, nextNewFeature, extraFeatures, nil)
 	}
 
-	tree1 := BuildTree(falses, depth-1, minLeafSamples, nextNewFeature, horizons)
-	tree2 := BuildTree(trues, depth-1, minLeafSamples, nextNewFeature+tree1.NumFeatures(), horizons)
+	tree1 := buildTree(falses, depth-1, minLeafSamples, nextNewFeature, extraFeatures, horizons)
+	tree2 := buildTree(trues, depth-1, minLeafSamples, nextNewFeature+tree1.NumFeatures(),
+		extraFeatures, horizons)
 
 	return &Tree{
 		Branch: &Branch{
@@ -80,7 +85,7 @@ func BuildTree(timesteps []*TimestepSample, depth, minLeafSamples, nextNewFeatur
 	}
 }
 
-// OptimalFeature finds the optimal feature to split on in
+// optimalFeature finds the optimal feature to split on in
 // order to separate the gradients of all the timesteps.
 //
 // This assumes that the timesteps all have a gradient
@@ -89,7 +94,7 @@ func BuildTree(timesteps []*TimestepSample, depth, minLeafSamples, nextNewFeatur
 // The horizons argument specifies how many timesteps in
 // the past we may look. A value of zero indicates that
 // only the current timestep may be inspected.
-func OptimalFeature(timesteps []*TimestepSample, horizons []int) BranchFeature {
+func optimalFeature(timesteps []*TimestepSample, extraFeatures int, horizons []int) BranchFeature {
 	if len(timesteps) == 0 {
 		panic("no timesteps passed")
 	}
@@ -120,6 +125,12 @@ func OptimalFeature(timesteps []*TimestepSample, horizons []int) BranchFeature {
 
 	for _, horizon := range horizons {
 		for i := -1; i < numFeatures; i++ {
+			if i >= numFeatures-extraFeatures {
+				prob := 1 / math.Sqrt(float64(extraFeatures))
+				if rand.Float64() < prob {
+					continue
+				}
+			}
 			featureChan <- BranchFeature{Feature: i, StepsInPast: horizon}
 		}
 	}

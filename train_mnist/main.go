@@ -45,8 +45,8 @@ func main() {
 			loss += seq.PropagateLoss()
 		}
 
-		tree := seqtree.BuildTree(seqtree.AllTimesteps(seqs...), Depth, MinLeafSamples,
-			model.NumFeatures(), horizons)
+		tree := seqtree.BuildTree(model, seqtree.AllTimesteps(seqs...), Depth, MinLeafSamples,
+			horizons)
 
 		// Bound KL on a different batch.
 		seqs = SampleSequences(dataset, model, Batch)
