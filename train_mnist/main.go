@@ -53,6 +53,9 @@ func main() {
 	for i := 0; true; i++ {
 		seqs := SampleSequences(dataset, model, Batch)
 		model.EvaluateAll(seqs)
+		for _, seq := range seqs {
+			seq.PropagateLoss()
+		}
 
 		builder.ExtraFeatures = model.ExtraFeatures
 		tree := builder.Build(seqtree.AllTimesteps(seqs...))
