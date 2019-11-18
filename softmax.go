@@ -72,27 +72,20 @@ func SoftmaxLossGrad(outputs, targets []float32) []float32 {
 //
 // This can be used to bound the KL of updates.
 func SoftmaxLossKL(outputs, deltas []float32, stepSize float32) float32 {
-	oldLogProbs := anyvec32.MakeVectorData(outputs)
-	newLogProbs := anyvec32.MakeVectorData(deltas)
-	newLogProbs.Scale(stepSize)
-	newLogProbs.Add(oldLogProbs)
-	anyvec.LogSoftmax(oldLogProbs, len(outputs))
-	anyvec.LogSoftmax(newLogProbs, len(outputs))
-	diff := newLogProbs.Copy()
-	diff.Sub(oldLogProbs)
-	anyvec.Exp(newLogProbs)
-	return newLogProbs.Dot(diff).(float32)
+	oldLogProbs := logSoftmax(outputs)
+	newLogProbs := logSoftmax(addDelta(outputs, deltas, stepSize))
+	var res float32
+	for i, x := range newLogProbs {
+		res += float32(math.Exp(float64(x)) * float64(x-oldLogProbs[i]))
+	}
+	return res
 }
 
 // SoftmaxLossDelta computes how much the loss changes due
 // to adding deltas*stepSize to outputs.
 func SoftmaxLossDelta(outputs, targets, deltas []float32, stepSize float32) float32 {
 	loss1 := SoftmaxLoss(outputs, targets)
-	newOutputs := make([]float32, len(outputs))
-	for i, x := range outputs {
-		newOutputs[i] = x + deltas[i]*stepSize
-	}
-	loss2 := SoftmaxLoss(newOutputs, targets)
+	loss2 := SoftmaxLoss(addDelta(outputs, deltas, stepSize), targets)
 	return loss2 - loss1
 }
 
@@ -116,5 +109,13 @@ func logSoftmax(logits []float32) []float32 {
 		res[i] = x - subtractor
 	}
 
+	return res
+}
+
+func addDelta(v1, v2 []float32, scale float32) []float32 {
+	res := make([]float32, len(v1))
+	for i, x := range v1 {
+		res[i] = x + v2[i]*scale
+	}
 	return res
 }
