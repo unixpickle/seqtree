@@ -74,7 +74,7 @@ func main() {
 	}
 }
 
-func EvaluateLoss(ds mnist.DataSet, m *seqtree.Model, count int) float64 {
+func EvaluateLoss(ds mnist.DataSet, m *seqtree.Model, count int) float32 {
 	var loss float32
 	for i := 0; i < count; i += Batch {
 		remaining := essentials.MinInt(count-i, Batch)
@@ -84,7 +84,7 @@ func EvaluateLoss(ds mnist.DataSet, m *seqtree.Model, count int) float64 {
 			loss += seq.PropagateLoss()
 		}
 	}
-	return loss / float64(count)
+	return loss / float32(count)
 }
 
 func SampleSequences(ds mnist.DataSet, m *seqtree.Model, count int) []seqtree.Sequence {
