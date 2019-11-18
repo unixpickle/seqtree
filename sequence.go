@@ -41,15 +41,21 @@ func AllTimesteps(seqs ...Sequence) []*TimestepSample {
 
 type Sequence []*Timestep
 
-// PropagateLoss computes the mean loss for the sequence
-// and sets all of the Gradients accordingly.
-func (s Sequence) PropagateLoss() float32 {
+// MeanLoss computes the mean loss for the sequence.
+func (s Sequence) MeanLoss() float32 {
 	var total float32
 	for _, t := range s {
 		total += SoftmaxLoss(t.Output, t.Target)
-		t.Gradient = SoftmaxLossGrad(t.Output, t.Target)
 	}
 	return total / float32(len(s))
+}
+
+// PropagateLoss computes the sets the Gradients for every
+// timestamp in the sequence.
+func (s Sequence) PropagateLoss() {
+	for _, t := range s {
+		t.Gradient = SoftmaxLossGrad(t.Output, t.Target)
+	}
 }
 
 // Timestep represents a single timestep in a sequence.

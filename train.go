@@ -50,6 +50,29 @@ func BoundedStep(timesteps []*TimestepSample, t *Tree, maxKL, maxStep float32) f
 	return 0
 }
 
+// PropagateLosses computes the gradients for every
+// sequence and sets the timesteps' Gradient fields.
+func PropagateLosses(seqs []Sequence) {
+	ch := make(chan Sequence, len(seqs))
+	for _, seq := range seqs {
+		ch <- seq
+	}
+	close(ch)
+
+	var wg sync.WaitGroup
+	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for seq := range ch {
+				seq.PropagateLoss()
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
 // A Builder stores parameters for building new trees on
 // top of a model.
 type Builder struct {

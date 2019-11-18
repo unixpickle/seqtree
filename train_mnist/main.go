@@ -55,9 +55,7 @@ func main() {
 	for i := 0; true; i++ {
 		seqs := SampleSequences(dataset, model, Batch)
 		model.EvaluateAll(seqs)
-		for _, seq := range seqs {
-			seq.PropagateLoss()
-		}
+		seqtree.PropagateLosses(seqs)
 
 		builder.ExtraFeatures = model.ExtraFeatures
 		tree := builder.Build(seqtree.AllTimesteps(seqs...))
@@ -86,7 +84,7 @@ func EvaluateLoss(ds mnist.DataSet, m *seqtree.Model, count int) float32 {
 		seqs := SampleSequences(ds, m, remaining)
 		m.EvaluateAll(seqs)
 		for _, seq := range seqs {
-			loss += seq.PropagateLoss()
+			loss += seq.MeanLoss()
 		}
 	}
 	return loss / float32(count)
