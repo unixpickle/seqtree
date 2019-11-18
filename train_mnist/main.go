@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"time"
 
 	"github.com/unixpickle/essentials"
 	"github.com/unixpickle/mnist"
@@ -24,6 +25,7 @@ const (
 )
 
 func main() {
+	rand.Seed(time.Now().UnixNano())
 	horizons := []int{}
 	for i := -4; i <= 4; i++ {
 		for j := 0; j <= 4; j++ {
@@ -35,6 +37,7 @@ func main() {
 	}
 	dataset := mnist.LoadTrainingDataSet()
 	model := &seqtree.Model{BaseFeatures: 2 + ImageSize*2}
+	model.Load("model.json")
 
 	for i := 0; true; i++ {
 		seqs := SampleSequences(dataset, model, Batch)
@@ -61,6 +64,7 @@ func main() {
 		if i%10 == 0 {
 			GenerateSequence(model)
 		}
+		model.Save("model.json")
 	}
 }
 

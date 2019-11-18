@@ -1,10 +1,14 @@
 package seqtree
 
 import (
+	"encoding/json"
+	"io/ioutil"
+	"os"
 	"runtime"
 	"sync"
 
 	"github.com/gonum/blas/blas32"
+	"github.com/pkg/errors"
 )
 
 // A Model is a sequence prediction model.
@@ -90,6 +94,34 @@ func (m *Model) Add(t *Tree, stepSize float32) {
 	t.Scale(-stepSize)
 	m.Trees = append(m.Trees, t)
 	m.ExtraFeatures += t.NumFeatures()
+}
+
+// Save saves the model to a JSON file.
+func (m *Model) Save(path string) error {
+	data, err := json.Marshal(m)
+	if err != nil {
+		return errors.Wrap(err, "save model")
+	}
+	if err := ioutil.WriteFile(path, data, 0755); err != nil {
+		return errors.Wrap(err, "save model")
+	}
+	return nil
+}
+
+// Load loads the model from a JSON file.
+// Does not fail with an error if the file does not exist.
+func (m *Model) Load(path string) error {
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return errors.Wrap(err, "load model")
+	}
+	if err := json.Unmarshal(data, m); err != nil {
+		return errors.Wrap(err, "load model")
+	}
+	return nil
 }
 
 // Tree represents part of a decision tree.
