@@ -14,14 +14,33 @@ import (
 // resulting loss improves.
 func BoundedStep(timesteps []*TimestepSample, t *Tree, maxKL, maxStep float32) float32 {
 	for i := 0; i < 64; i++ {
+		var lock sync.Mutex
+		var wg sync.WaitGroup
 		var currentKL float32
 		var currentDelta float32
-		for _, ts := range timesteps {
-			leaf := t.Evaluate(ts)
-			currentKL += SoftmaxLossKL(ts.Timestep().Output, leaf.OutputDelta, -maxStep)
-			currentDelta += SoftmaxLossDelta(ts.Timestep().Output, ts.Timestep().Target,
-				leaf.OutputDelta, -maxStep)
+
+		numProcs := runtime.GOMAXPROCS(0)
+		for i := 0; i < numProcs; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				var klTotal, deltaTotal float32
+				for j, ts := range timesteps {
+					if j%numProcs != i {
+						continue
+					}
+					leaf := t.Evaluate(ts)
+					klTotal += SoftmaxLossKL(ts.Timestep().Output, leaf.OutputDelta, -maxStep)
+					deltaTotal += SoftmaxLossDelta(ts.Timestep().Output, ts.Timestep().Target,
+						leaf.OutputDelta, -maxStep)
+				}
+				lock.Lock()
+				currentKL += klTotal
+				currentDelta += deltaTotal
+				lock.Unlock()
+			}(i)
 		}
+		wg.Wait()
 		currentKL /= float32(len(timesteps))
 		if currentKL <= maxKL && currentDelta < 0 {
 			return maxStep
