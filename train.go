@@ -127,7 +127,7 @@ func optimalFeature(timesteps []*TimestepSample, extraFeatures int, horizons []i
 		for i := -1; i < numFeatures; i++ {
 			if i >= numFeatures-extraFeatures {
 				prob := 1 / math.Sqrt(float64(extraFeatures))
-				if rand.Float64() < prob {
+				if rand.Float64() > prob {
 					continue
 				}
 			}
