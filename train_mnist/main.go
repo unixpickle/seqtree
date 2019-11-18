@@ -16,12 +16,15 @@ import (
 )
 
 const (
-	Batch          = 2000
-	ImageSize      = 28
-	Depth          = 4
-	MaxKL          = 0.01
-	MaxStep        = 0.5
-	MinLeafSamples = 10
+	Batch           = 2000
+	ImageSize       = 28
+	Depth           = 4
+	MaxKL           = 0.01
+	MaxStep         = 10.0
+	MinSplitSamples = 10
+
+	// Split with a small subset of the entire batch.
+	MaxSplitSamples = 10 * ImageSize * ImageSize
 )
 
 func main() {
@@ -39,6 +42,13 @@ func main() {
 	model := &seqtree.Model{BaseFeatures: 2 + ImageSize*2}
 	model.Load("model.json")
 
+	builder := seqtree.Builder{
+		Depth:           Depth,
+		Horizons:        horizons,
+		MinSplitSamples: MinSplitSamples,
+		MaxSplitSamples: MaxSplitSamples,
+	}
+
 	for i := 0; true; i++ {
 		seqs := SampleSequences(dataset, model, Batch)
 		model.EvaluateAll(seqs)
@@ -48,8 +58,8 @@ func main() {
 			loss += seq.PropagateLoss()
 		}
 
-		tree := seqtree.BuildTree(model, seqtree.AllTimesteps(seqs...), Depth, MinLeafSamples,
-			horizons)
+		builder.ExtraFeatures = model.ExtraFeatures
+		tree := builder.Build(seqtree.AllTimesteps(seqs...))
 
 		// Bound KL on a different batch.
 		seqs = SampleSequences(dataset, model, Batch)

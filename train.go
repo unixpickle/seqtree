@@ -50,35 +50,72 @@ func BoundedStep(timesteps []*TimestepSample, t *Tree, maxKL, maxStep float32) f
 	return 0
 }
 
-// BuildTree builds a tree greedily for the timesteps.
-//
-// The minLeafSamples argument specifies the minimum
-// number of samples there must be in order for the tree
-// to continue attempting to split the data.
-func BuildTree(m *Model, timesteps []*TimestepSample, depth, minLeafSamples int,
-	horizons []int) *Tree {
-	return buildTree(timesteps, depth, minLeafSamples, m.NumFeatures(), m.ExtraFeatures, horizons)
+// A Builder stores parameters for building new trees on
+// top of a model.
+type Builder struct {
+	// Depth is the maximum depth of the resulting trees.
+	Depth int
+
+	// MinLeafSamples is the minimum number of samples for
+	// a node to have in order to attempt to split it.
+	MinSplitSamples int
+
+	// MaxSplitSamples is the maximum number of samples to
+	// use for calculating optimal splits. If there are
+	// more samples than this, then a random subset of
+	// samples are used.
+	//
+	// Setting this to zero has the special meaning of
+	// using all of the samples for every split.
+	MaxSplitSamples int
+
+	// Horizons specifies the steps in the past to look at
+	// features for splits.
+	Horizons []int
+
+	// ExtraFeatures, if non-zero, specifies the number of
+	// features at the end of the feature list which
+	// should be treated as second-class features and
+	// should be used only sometimes rather than all the
+	// time in splits.
+	//
+	// Specifying this can prevent slowdowns as more and
+	// more features are added to the model.
+	ExtraFeatures int
 }
 
-func buildTree(timesteps []*TimestepSample, depth, minLeafSamples, nextNewFeature int,
-	extraFeatures int, horizons []int) *Tree {
-	if len(timesteps) == 0 {
+// Build builds a tree greedily using all of the provided
+// samples. It is assumed that the samples already have a
+// computed gradient.
+func (b *Builder) Build(samples []*TimestepSample) *Tree {
+	if len(samples) == 0 {
 		panic("no data")
 	}
+	numFeatures := len(samples[0].Timestep().Features)
+	return b.build(samples, b.Depth, numFeatures)
+}
 
-	if depth == 0 || len(timesteps) <= minLeafSamples {
+func (b *Builder) build(samples []*TimestepSample, depth, nextNewFeature int) *Tree {
+	if depth == 0 || len(samples) <= b.MinSplitSamples {
 		return &Tree{
 			Leaf: &Leaf{
-				OutputDelta: gradientMean(timesteps),
+				OutputDelta: gradientMean(samples),
 				Feature:     nextNewFeature,
 			},
 		}
 	}
 
-	feature := optimalFeature(timesteps, extraFeatures, horizons)
+	splitSamples := samples
+	if b.MaxSplitSamples != 0 && len(splitSamples) > b.MaxSplitSamples {
+		splitSamples = make([]*TimestepSample, b.MaxSplitSamples)
+		for i, j := range rand.Perm(len(splitSamples))[:b.MaxSplitSamples] {
+			splitSamples[i] = samples[j]
+		}
+	}
+	feature := optimalFeature(splitSamples, b.ExtraFeatures, b.Horizons)
 
 	var falses, trues []*TimestepSample
-	for _, t := range timesteps {
+	for _, t := range samples {
 		if t.BranchFeature(feature) {
 			trues = append(trues, t)
 		} else {
@@ -88,12 +125,11 @@ func buildTree(timesteps []*TimestepSample, depth, minLeafSamples, nextNewFeatur
 
 	if len(trues) == 0 || len(falses) == 0 {
 		// No split does any good.
-		return buildTree(timesteps, 0, minLeafSamples, nextNewFeature, extraFeatures, nil)
+		return b.build(samples, 0, nextNewFeature)
 	}
 
-	tree1 := buildTree(falses, depth-1, minLeafSamples, nextNewFeature, extraFeatures, horizons)
-	tree2 := buildTree(trues, depth-1, minLeafSamples, nextNewFeature+tree1.NumFeatures(),
-		extraFeatures, horizons)
+	tree1 := b.build(falses, depth-1, nextNewFeature)
+	tree2 := b.build(trues, depth-1, nextNewFeature+tree1.NumFeatures())
 
 	return &Tree{
 		Branch: &Branch{
@@ -113,12 +149,12 @@ func buildTree(timesteps []*TimestepSample, depth, minLeafSamples, nextNewFeatur
 // The horizons argument specifies how many timesteps in
 // the past we may look. A value of zero indicates that
 // only the current timestep may be inspected.
-func optimalFeature(timesteps []*TimestepSample, extraFeatures int, horizons []int) BranchFeature {
-	if len(timesteps) == 0 {
-		panic("no timesteps passed")
+func optimalFeature(samples []*TimestepSample, extraFeatures int, horizons []int) BranchFeature {
+	if len(samples) == 0 {
+		panic("no data")
 	}
-	numFeatures := len(timesteps[0].Timestep().Features)
-	gradSum := gradientSum(timesteps)
+	numFeatures := len(samples[0].Timestep().Features)
+	gradSum := gradientSum(samples)
 
 	var resultLock sync.Mutex
 	var bestFeature BranchFeature
@@ -131,7 +167,7 @@ func optimalFeature(timesteps []*TimestepSample, extraFeatures int, horizons []i
 		go func() {
 			defer wg.Done()
 			for f := range featureChan {
-				quality := featureSplitQuality(timesteps, f, gradSum)
+				quality := featureSplitQuality(samples, f, gradSum)
 				resultLock.Lock()
 				if quality >= bestQuality {
 					bestFeature = f
@@ -160,12 +196,12 @@ func optimalFeature(timesteps []*TimestepSample, extraFeatures int, horizons []i
 	return bestFeature
 }
 
-func featureSplitQuality(timesteps []*TimestepSample, f BranchFeature, sum []float32) float32 {
+func featureSplitQuality(samples []*TimestepSample, f BranchFeature, sum []float32) float32 {
 	falseCount := 0
 	trueCount := 0
-	featureValues := make([]bool, len(timesteps))
+	featureValues := make([]bool, len(samples))
 
-	for i, t := range timesteps {
+	for i, t := range samples {
 		val := t.BranchFeature(f)
 		featureValues[i] = val
 		if val {
@@ -182,7 +218,7 @@ func featureSplitQuality(timesteps []*TimestepSample, f BranchFeature, sum []flo
 	minoritySum := make([]float32, len(sum))
 	for i, val := range featureValues {
 		if val == (trueCount < falseCount) {
-			for j, x := range timesteps[i].Timestep().Gradient {
+			for j, x := range samples[i].Timestep().Gradient {
 				minoritySum[j] += x
 			}
 		}

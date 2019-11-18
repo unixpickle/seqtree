@@ -10,11 +10,11 @@ import (
 )
 
 const (
-	Batch          = 200
-	Length         = 20
-	Depth          = 3
-	Step           = 0.5
-	MinLeafSamples = 2
+	Batch           = 200
+	Length          = 20
+	Depth           = 3
+	Step            = 0.5
+	MinSplitSamples = 2
 
 	WarmupStep  = 5.0
 	WarmupSteps = 100
@@ -27,6 +27,12 @@ func main() {
 	textData, err := ioutil.ReadFile("/usr/share/dict/words")
 	essentials.Must(err)
 
+	builder := seqtree.Builder{
+		Depth:           Depth,
+		Horizons:        Horizons,
+		MinSplitSamples: MinSplitSamples,
+	}
+
 	for i := 0; true; i++ {
 		seqs := SampleSequences(textData, model, Batch, Length)
 		model.EvaluateAll(seqs)
@@ -36,8 +42,8 @@ func main() {
 			loss += seq.PropagateLoss()
 		}
 
-		tree := seqtree.BuildTree(model, seqtree.AllTimesteps(seqs...), Depth, MinLeafSamples,
-			Horizons)
+		builder.ExtraFeatures = model.ExtraFeatures
+		tree := builder.Build(seqtree.AllTimesteps(seqs...))
 		if i < WarmupSteps {
 			model.Add(tree, WarmupStep)
 		} else {
