@@ -7,6 +7,8 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"runtime"
+	"sync"
 	"time"
 
 	"github.com/unixpickle/essentials"
@@ -91,34 +93,47 @@ func EvaluateLoss(ds mnist.DataSet, m *seqtree.Model, count int) float32 {
 }
 
 func SampleSequences(ds mnist.DataSet, m *seqtree.Model, count int) []seqtree.Sequence {
-	var res []seqtree.Sequence
-	for i := 0; i < count; i++ {
-		sample := ds.Samples[rand.Intn(len(ds.Samples))]
-		seq := seqtree.Sequence{}
-		prev := -1
-		for i, intensity := range sample.Intensities {
-			x := i % ImageSize
-			y := i / ImageSize
-			ts := &seqtree.Timestep{
-				Output:   make([]float32, 2),
-				Features: make([]bool, m.NumFeatures()),
-				Target:   make([]float32, 2),
+	res := make([]seqtree.Sequence, count)
+
+	var wg sync.WaitGroup
+	numProcs := runtime.GOMAXPROCS(0)
+	for i := 0; i < numProcs; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			for j := 0; j < count; j++ {
+				if j%numProcs != i {
+					continue
+				}
+				sample := ds.Samples[rand.Intn(len(ds.Samples))]
+				seq := seqtree.Sequence{}
+				prev := -1
+				for i, intensity := range sample.Intensities {
+					x := i % ImageSize
+					y := i / ImageSize
+					ts := &seqtree.Timestep{
+						Output:   make([]float32, 2),
+						Features: make([]bool, m.NumFeatures()),
+						Target:   make([]float32, 2),
+					}
+					if prev != -1 {
+						ts.Features[prev] = true
+					}
+					ts.Features[2+x] = true
+					ts.Features[2+ImageSize+y] = true
+					if intensity > 0.5 {
+						prev = 1
+					} else {
+						prev = 0
+					}
+					ts.Target[prev] = 1.0
+					seq = append(seq, ts)
+				}
+				res[j] = seq
 			}
-			if prev != -1 {
-				ts.Features[prev] = true
-			}
-			ts.Features[2+x] = true
-			ts.Features[2+ImageSize+y] = true
-			if intensity > 0.5 {
-				prev = 1
-			} else {
-				prev = 0
-			}
-			ts.Target[prev] = 1.0
-			seq = append(seq, ts)
-		}
-		res = append(res, seq)
+		}(i)
 	}
+	wg.Wait()
 	return res
 }
 
