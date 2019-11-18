@@ -1,9 +1,9 @@
 package seqtree
 
 import (
+	"math"
 	"math/rand"
 
-	"github.com/unixpickle/anydiff"
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/anyvec/anyvec32"
 )
@@ -37,13 +37,31 @@ func SoftmaxLoss(outputs, targets []float32) float32 {
 // SoftmaxLossGrad computes the gradient of SoftmaxLoss
 // with respect to the outputs.
 func SoftmaxLossGrad(outputs, targets []float32) []float32 {
-	probs := anydiff.NewConst(anyvec32.MakeVectorData(targets))
-	logits := anydiff.NewVar(anyvec32.MakeVectorData(outputs))
-	prob := anydiff.Dot(anydiff.LogSoftmax(logits, len(outputs)), probs)
-	prob = anydiff.Scale(prob, float32(-1.0))
-	grad := anydiff.NewGrad(logits)
-	prob.Propagate(anyvec32.MakeVectorData([]float32{1.0}), grad)
-	return grad[logits].Data().([]float32)
+	var targetSum float32
+	for _, x := range targets {
+		targetSum += x
+	}
+
+	maxOutput := outputs[0]
+	for _, x := range outputs[1:] {
+		if x > maxOutput {
+			maxOutput = x
+		}
+	}
+
+	grad := make([]float32, len(outputs))
+	for i, x := range outputs {
+		grad[i] = float32(math.Exp(float64(x - maxOutput)))
+	}
+	var gradSum float32
+	for _, x := range grad {
+		gradSum += x
+	}
+	div := 1.0 / gradSum
+	for i, x := range grad {
+		grad[i] = targetSum*x*div - targets[i]
+	}
+	return grad
 }
 
 // SoftmaxLossKL computes
