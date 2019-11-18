@@ -79,8 +79,10 @@ type Builder struct {
 	// Depth is the maximum depth of the resulting trees.
 	Depth int
 
-	// MinLeafSamples is the minimum number of samples for
-	// a node to have in order to attempt to split it.
+	// MinSplitSamples is the minimum number of samples
+	// for splits to continue being made.
+	// If a split results in a path with fewer than
+	// MinSplitSamples, it will not be taken.
 	MinSplitSamples int
 
 	// MaxSplitSamples is the maximum number of samples to
@@ -146,8 +148,9 @@ func (b *Builder) build(samples []*TimestepSample, depth, nextNewFeature int) *T
 		}
 	}
 
-	if len(trues) == 0 || len(falses) == 0 {
-		// No split does any good.
+	if len(trues) == 0 || len(falses) == 0 || len(trues) < b.MinSplitSamples ||
+		len(falses) < b.MinSplitSamples {
+		// No allowed split does any good.
 		return b.build(samples, 0, nextNewFeature)
 	}
 
