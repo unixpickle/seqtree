@@ -17,6 +17,7 @@ import (
 
 const (
 	Batch           = 2000
+	EvalBatch       = 10000
 	ImageSize       = 28
 	Depth           = 4
 	MaxKL           = 0.01
@@ -53,11 +54,6 @@ func main() {
 		seqs := SampleSequences(dataset, model, Batch)
 		model.EvaluateAll(seqs)
 
-		var loss float32
-		for _, seq := range seqs {
-			loss += seq.PropagateLoss()
-		}
-
 		builder.ExtraFeatures = model.ExtraFeatures
 		tree := builder.Build(seqtree.AllTimesteps(seqs...))
 
@@ -70,12 +66,25 @@ func main() {
 			model.Add(tree, stepSize)
 		}
 
-		log.Printf("step %d: loss=%f step_size=%f", i, loss/Batch, stepSize)
-		if i%10 == 0 {
-			GenerateSequence(model)
-		}
+		log.Printf("step %d: loss=%f step_size=%f", i,
+			EvaluateLoss(dataset, model, EvalBatch), stepSize)
+
+		GenerateSequence(model)
 		model.Save("model.json")
 	}
+}
+
+func EvaluateLoss(ds mnist.DataSet, m *seqtree.Model, count int) float64 {
+	var loss float32
+	for i := 0; i < count; i += Batch {
+		remaining := essentials.MinInt(count-i, Batch)
+		seqs := SampleSequences(ds, m, remaining)
+		m.EvaluateAll(seqs)
+		for _, seq := range seqs {
+			loss += seq.PropagateLoss()
+		}
+	}
+	return loss / float64(count)
 }
 
 func SampleSequences(ds mnist.DataSet, m *seqtree.Model, count int) []seqtree.Sequence {
