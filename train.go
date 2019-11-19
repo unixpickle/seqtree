@@ -103,17 +103,18 @@ func AvgLossDelta(timesteps []*TimestepSample, t *Tree, currentStep float32) flo
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			var deltaTotal float32
+			deltaTotal := newKahanSum(1)
 			for j, ts := range timesteps {
 				if j%numProcs != i {
 					continue
 				}
 				leaf := t.Evaluate(ts)
-				deltaTotal += SoftmaxLossDelta(ts.Timestep().Output, ts.Timestep().Target,
+				delta := SoftmaxLossDelta(ts.Timestep().Output, ts.Timestep().Target,
 					leaf.OutputDelta, -currentStep)
+				deltaTotal.Add([]float32{delta})
 			}
 			lock.Lock()
-			currentDelta += deltaTotal
+			currentDelta += deltaTotal.Sum()[0]
 			lock.Unlock()
 		}(i)
 	}
@@ -319,13 +320,11 @@ func vectorNormSquared(v []float32) float32 {
 }
 
 func gradientSum(ts []*TimestepSample) []float32 {
-	sum := make([]float32, len(ts[0].Timestep().Gradient))
+	sum := newKahanSum(len(ts[0].Timestep().Gradient))
 	for _, t := range ts {
-		for j, x := range t.Timestep().Gradient {
-			sum[j] += x
-		}
+		sum.Add(t.Timestep().Gradient)
 	}
-	return sum
+	return sum.Sum()
 }
 
 func gradientMean(ts []*TimestepSample) []float32 {

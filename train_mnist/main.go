@@ -63,11 +63,11 @@ func main() {
 		seqs = SampleSequences(dataset, model, Batch)
 		model.EvaluateAll(seqs)
 
-		stepSize := seqtree.OptimalStep(seqtree.AllTimesteps(seqs...), tree, MaxStep, 10)
+		stepSize := seqtree.OptimalStep(seqtree.AllTimesteps(seqs...), tree, MaxStep, 20)
+		delta := seqtree.AvgLossDelta(seqtree.AllTimesteps(seqs...), tree, stepSize)
 		if stepSize > 0 {
 			model.Add(tree, stepSize)
 		}
-		delta := seqtree.AvgLossDelta(seqtree.AllTimesteps(seqs...), tree, -stepSize)
 		avgLoss := EvaluateLoss(dataset, model, EvalBatch)
 
 		log.Printf("step %d: loss=%f step_size=%f loss_delta=%f", i, avgLoss, stepSize, -delta)
