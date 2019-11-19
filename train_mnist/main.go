@@ -67,9 +67,10 @@ func main() {
 		if stepSize > 0 {
 			model.Add(tree, stepSize)
 		}
+		delta := seqtree.AvgLossDelta(seqtree.AllTimesteps(seqs...), tree, stepSize)
+		avgLoss := EvaluateLoss(dataset, model, EvalBatch)
 
-		log.Printf("step %d: loss=%f step_size=%f", i,
-			EvaluateLoss(dataset, model, EvalBatch), stepSize)
+		log.Printf("step %d: loss=%f step_size=%f loss_delta=%f", i, avgLoss, stepSize, delta)
 
 		GenerateSequence(model)
 		model.Save("model.json")
