@@ -50,6 +50,53 @@ func BoundedStep(timesteps []*TimestepSample, t *Tree, maxKL, maxStep float32) f
 	return 0
 }
 
+// OptimalStep performs a line search to find a step size
+// that maximizes loss improvement.
+func OptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32, iters int) float32 {
+	deltaForStep := func(currentStep float32) float32 {
+		var lock sync.Mutex
+		var currentDelta float32
+
+		var wg sync.WaitGroup
+		numProcs := runtime.GOMAXPROCS(0)
+		for i := 0; i < numProcs; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				var deltaTotal float32
+				for j, ts := range timesteps {
+					if j%numProcs != i {
+						continue
+					}
+					leaf := t.Evaluate(ts)
+					deltaTotal += SoftmaxLossDelta(ts.Timestep().Output, ts.Timestep().Target,
+						leaf.OutputDelta, -currentStep)
+				}
+				lock.Lock()
+				currentDelta += deltaTotal
+				lock.Unlock()
+			}(i)
+		}
+		wg.Wait()
+		return currentDelta
+	}
+
+	minStep := float32(0.0)
+	for i := 0; i < iters; i++ {
+		midStep1 := minStep*0.75 + maxStep*0.25
+		value1 := deltaForStep(midStep1)
+		midStep2 := minStep*0.25 + maxStep*0.75
+		value2 := deltaForStep(midStep2)
+		if value2 < value1 {
+			minStep = midStep1
+		} else {
+			maxStep = midStep2
+		}
+	}
+
+	return (minStep + maxStep) / 2
+}
+
 // PropagateLosses computes the gradients for every
 // sequence and sets the timesteps' Gradient fields.
 func PropagateLosses(seqs []Sequence) {

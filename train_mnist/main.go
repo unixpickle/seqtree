@@ -22,8 +22,7 @@ const (
 	EvalBatch       = 10000
 	ImageSize       = 28
 	Depth           = 4
-	MaxKL           = 0.01
-	MaxStep         = 10.0
+	MaxStep         = 20.0
 	MinSplitSamples = 10
 
 	// Split with a small subset of the entire batch.
@@ -64,7 +63,7 @@ func main() {
 		seqs = SampleSequences(dataset, model, Batch)
 		model.EvaluateAll(seqs)
 
-		stepSize := seqtree.BoundedStep(seqtree.AllTimesteps(seqs...), tree, MaxKL, MaxStep)
+		stepSize := seqtree.OptimalStep(seqtree.AllTimesteps(seqs...), tree, MaxStep, 10)
 		if stepSize > 0 {
 			model.Add(tree, stepSize)
 		}
