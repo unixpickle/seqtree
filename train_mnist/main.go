@@ -23,7 +23,7 @@ const (
 	ImageSize       = 28
 	Depth           = 4
 	MaxStep         = 20.0
-	MinSplitSamples = 10
+	MinSplitSamples = 100
 
 	// Split with a small subset of the entire batch.
 	MaxSplitSamples = 10 * ImageSize * ImageSize

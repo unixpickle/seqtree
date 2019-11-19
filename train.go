@@ -186,45 +186,44 @@ func (b *Builder) build(samples []*TimestepSample, depth, nextNewFeature int) *T
 			splitSamples[i] = samples[j]
 		}
 	}
-	feature := b.optimalFeature(splitSamples, float32(len(splitSamples))/float32(len(samples)))
+	features := b.optimalFeatures(splitSamples, float32(len(splitSamples))/float32(len(samples)))
 
-	var falses, trues []*TimestepSample
-	for _, t := range samples {
-		if t.BranchFeature(feature) {
-			trues = append(trues, t)
-		} else {
-			falses = append(falses, t)
+	for _, feature := range features {
+		var falses, trues []*TimestepSample
+		for _, t := range samples {
+			if t.BranchFeature(feature) {
+				trues = append(trues, t)
+			} else {
+				falses = append(falses, t)
+			}
+		}
+
+		if len(trues) == 0 || len(falses) == 0 || len(trues) < b.MinSplitSamples ||
+			len(falses) < b.MinSplitSamples {
+			// The split is not allowed.
+			continue
+		}
+
+		tree1 := b.build(falses, depth-1, nextNewFeature)
+		tree2 := b.build(trues, depth-1, nextNewFeature+tree1.NumFeatures())
+		return &Tree{
+			Branch: &Branch{
+				Feature:     feature,
+				FalseBranch: tree1,
+				TrueBranch:  tree2,
+			},
 		}
 	}
 
-	if len(trues) == 0 || len(falses) == 0 || len(trues) < b.MinSplitSamples ||
-		len(falses) < b.MinSplitSamples {
-		// No allowed split does any good.
-		return b.build(samples, 0, nextNewFeature)
-	}
-
-	tree1 := b.build(falses, depth-1, nextNewFeature)
-	tree2 := b.build(trues, depth-1, nextNewFeature+tree1.NumFeatures())
-
-	return &Tree{
-		Branch: &Branch{
-			Feature:     feature,
-			FalseBranch: tree1,
-			TrueBranch:  tree2,
-		},
-	}
+	return b.build(samples, 0, nextNewFeature)
 }
 
-// optimalFeature finds the optimal feature to split on in
-// order to separate the gradients of all the timesteps.
+// optimalFeatures finds features which produce reasonable
+// splits and sorts them by quality.
 //
 // This assumes that the timesteps all have a gradient
 // set.
-//
-// The horizons argument specifies how many timesteps in
-// the past we may look. A value of zero indicates that
-// only the current timestep may be inspected.
-func (b *Builder) optimalFeature(samples []*TimestepSample, sampleFrac float32) BranchFeature {
+func (b *Builder) optimalFeatures(samples []*TimestepSample, sampleFrac float32) []BranchFeature {
 	if len(samples) == 0 {
 		panic("no data")
 	}
@@ -232,8 +231,8 @@ func (b *Builder) optimalFeature(samples []*TimestepSample, sampleFrac float32) 
 	gradSum := gradientSum(samples)
 
 	var resultLock sync.Mutex
-	var bestFeature BranchFeature
-	var bestQuality float32
+	var features []BranchFeature
+	var qualities []float32
 
 	featureChan := make(chan BranchFeature, 10)
 	wg := sync.WaitGroup{}
@@ -243,12 +242,12 @@ func (b *Builder) optimalFeature(samples []*TimestepSample, sampleFrac float32) 
 			defer wg.Done()
 			for f := range featureChan {
 				quality := b.featureSplitQuality(samples, f, gradSum, sampleFrac)
-				resultLock.Lock()
-				if quality >= bestQuality {
-					bestFeature = f
-					bestQuality = quality
+				if quality > 0 {
+					resultLock.Lock()
+					features = append(features, f)
+					qualities = append(qualities, quality)
+					resultLock.Unlock()
 				}
-				resultLock.Unlock()
 			}
 		}()
 	}
@@ -265,10 +264,13 @@ func (b *Builder) optimalFeature(samples []*TimestepSample, sampleFrac float32) 
 		}
 	}
 	close(featureChan)
-
 	wg.Wait()
 
-	return bestFeature
+	essentials.VoodooSort(qualities, func(i, j int) bool {
+		return qualities[i] > qualities[j]
+	}, features)
+
+	return features
 }
 
 func (b *Builder) featureSplitQuality(samples []*TimestepSample, f BranchFeature,
@@ -290,6 +292,7 @@ func (b *Builder) featureSplitQuality(samples []*TimestepSample, f BranchFeature
 	minSamples := int(sampleFrac * float32(b.MinSplitSamples))
 	if falseCount == 0 || trueCount == 0 || trueCount < minSamples ||
 		falseCount < minSamples {
+		// The split is unlikely to be allowed.
 		return 0
 	}
 
