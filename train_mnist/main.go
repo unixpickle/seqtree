@@ -59,7 +59,7 @@ func main() {
 		builder.ExtraFeatures = model.ExtraFeatures
 		tree := builder.Build(seqtree.AllTimesteps(seqs...))
 
-		// Bound KL on a different batch.
+		// Optimize step size on a different batch.
 		seqs = SampleSequences(dataset, model, Batch)
 		model.EvaluateAll(seqs)
 
