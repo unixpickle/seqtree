@@ -37,17 +37,7 @@ func (m *Model) NumFeatures() int {
 // At the end of the evaluation, all of the features and
 // output vectors in the sequence will be updated.
 func (m *Model) Evaluate(seq Sequence) {
-	for _, t := range m.Trees {
-		for i, ts := range seq {
-			leaf := t.Evaluate(&TimestepSample{Sequence: seq, Index: i})
-			v1 := blas32.Vector{Inc: 1, Data: leaf.OutputDelta}
-			v2 := blas32.Vector{Inc: 1, Data: ts.Output}
-			blas32.Axpy(len(ts.Output), 1.0, v1, v2)
-			if leaf.Feature != 0 {
-				ts.Features[leaf.Feature] = true
-			}
-		}
-	}
+	m.EvaluateAt(seq, 0)
 }
 
 // EvaluateAt is like Evaluate(), but it starts at the
@@ -60,7 +50,7 @@ func (m *Model) EvaluateAt(seq Sequence, start int) {
 			v2 := blas32.Vector{Inc: 1, Data: ts.Output}
 			blas32.Axpy(len(ts.Output), 1.0, v1, v2)
 			if leaf.Feature != 0 {
-				ts.Features[leaf.Feature] = true
+				ts.Features.Set(leaf.Feature, true)
 			}
 		}
 	}

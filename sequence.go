@@ -8,7 +8,7 @@ package seqtree
 // features set.
 func MakeOneHotSequence(seq []int, outputSize, numFeatures int) Sequence {
 	ts := &Timestep{
-		Features: make([]bool, numFeatures),
+		Features: NewBitmap(numFeatures),
 		Output:   make([]float32, outputSize),
 		Target:   make([]float32, outputSize),
 	}
@@ -17,11 +17,11 @@ func MakeOneHotSequence(seq []int, outputSize, numFeatures int) Sequence {
 		ts.Target[x] = 1.0
 		res = append(res, ts)
 		ts = &Timestep{
-			Features: make([]bool, numFeatures),
+			Features: NewBitmap(numFeatures),
 			Output:   make([]float32, outputSize),
 			Target:   make([]float32, outputSize),
 		}
-		ts.Features[x] = true
+		ts.Features.Set(x, true)
 	}
 	ts.Target[0] = 1.0
 	return append(res, ts)
@@ -61,7 +61,7 @@ func (s Sequence) PropagateLoss() {
 // Timestep represents a single timestep in a sequence.
 type Timestep struct {
 	// Features stores the current feature bitmap.
-	Features []bool
+	Features *Bitmap
 
 	// Output is the current prediction parameter vector
 	// for this timestamp.
@@ -91,10 +91,50 @@ func (t *TimestepSample) BranchFeature(b BranchFeature) bool {
 		return false
 	}
 	ts := t.Sequence[t.Index-b.StepsInPast]
-	return ts.Features[b.Feature]
+	return ts.Features.Get(b.Feature)
 }
 
 // Timestep gets the corresponding Timestep.
 func (t *TimestepSample) Timestep() *Timestep {
 	return t.Sequence[t.Index]
+}
+
+// A Bitmap is effectively an array of booleans.
+type Bitmap struct {
+	numBits int
+	bytes   []uint8
+}
+
+// NewBitmap creates a bitmap of all zeros.
+func NewBitmap(numBits int) *Bitmap {
+	numBytes := numBits / 8
+	if numBits%8 != 0 {
+		numBytes++
+	}
+	return &Bitmap{numBits: numBits, bytes: make([]uint8, numBytes)}
+}
+
+// Len gets the number of bits.
+func (b *Bitmap) Len() int {
+	return b.numBits
+}
+
+// Get gets the bit at index i.
+func (b *Bitmap) Get(i int) bool {
+	if i < 0 || i >= b.numBits {
+		panic("index out of range")
+	}
+	return b.bytes[i>>3]&(1<<uint(i&7)) != 0
+}
+
+// Set sets the bit at index i.
+func (b *Bitmap) Set(i int, v bool) {
+	if i < 0 || i >= b.numBits {
+		panic("index out of range")
+	}
+	if v {
+		b.bytes[i>>3] |= 1 << uint(i&7)
+	} else {
+		b.bytes[i>>3] &= ^(1 << uint(i&7))
+	}
 }

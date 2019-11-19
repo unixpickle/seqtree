@@ -36,10 +36,11 @@ func main() {
 	for i := 0; true; i++ {
 		seqs := SampleSequences(textData, model, Batch, Length)
 		model.EvaluateAll(seqs)
+		seqtree.PropagateLosses(seqs)
 
 		var loss float32
 		for _, seq := range seqs {
-			loss += seq.PropagateLoss()
+			loss += seq.MeanLoss()
 		}
 
 		builder.ExtraFeatures = model.ExtraFeatures
@@ -75,7 +76,7 @@ func GenerateSequence(m *seqtree.Model, length int) {
 	seq := seqtree.Sequence{
 		&seqtree.Timestep{
 			Output:   make([]float32, 256),
-			Features: make([]bool, m.NumFeatures()),
+			Features: seqtree.NewBitmap(m.NumFeatures()),
 		},
 	}
 	res := []byte{}
@@ -85,9 +86,9 @@ func GenerateSequence(m *seqtree.Model, length int) {
 		res = append(res, byte(num))
 		ts := &seqtree.Timestep{
 			Output:   make([]float32, 256),
-			Features: make([]bool, m.NumFeatures()),
+			Features: seqtree.NewBitmap(m.NumFeatures()),
 		}
-		ts.Features[num] = true
+		ts.Features.Set(num, true)
 		seq = append(seq, ts)
 	}
 	log.Println("sample:", string(res))

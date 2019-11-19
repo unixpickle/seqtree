@@ -165,7 +165,7 @@ func (b *Builder) Build(samples []*TimestepSample) *Tree {
 	if len(samples) == 0 {
 		panic("no data")
 	}
-	numFeatures := len(samples[0].Timestep().Features)
+	numFeatures := samples[0].Timestep().Features.Len()
 	return b.build(samples, b.Depth, numFeatures)
 }
 
@@ -227,7 +227,7 @@ func (b *Builder) optimalFeatures(samples []*TimestepSample, sampleFrac float32)
 	if len(samples) == 0 {
 		panic("no data")
 	}
-	numFeatures := len(samples[0].Timestep().Features)
+	numFeatures := samples[0].Timestep().Features.Len()
 	gradSum := gradientSum(samples)
 
 	var resultLock sync.Mutex

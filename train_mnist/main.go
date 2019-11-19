@@ -111,14 +111,14 @@ func SampleSequences(ds mnist.DataSet, m *seqtree.Model, count int) []seqtree.Se
 					y := i / ImageSize
 					ts := &seqtree.Timestep{
 						Output:   make([]float32, 2),
-						Features: make([]bool, m.NumFeatures()),
+						Features: seqtree.NewBitmap(m.NumFeatures()),
 						Target:   make([]float32, 2),
 					}
 					if prev != -1 {
-						ts.Features[prev] = true
+						ts.Features.Set(prev, true)
 					}
-					ts.Features[2+x] = true
-					ts.Features[2+ImageSize+y] = true
+					ts.Features.Set(2+x, true)
+					ts.Features.Set(2+ImageSize+y, true)
 					if intensity > 0.5 {
 						prev = 1
 					} else {
@@ -142,14 +142,14 @@ func GenerateSequence(m *seqtree.Model) {
 			seq := seqtree.Sequence{
 				&seqtree.Timestep{
 					Output:   make([]float32, 2),
-					Features: make([]bool, m.NumFeatures()),
+					Features: seqtree.NewBitmap(m.NumFeatures()),
 				},
 			}
 			for i := 0; i < ImageSize; i++ {
 				for j := 0; j < ImageSize; j++ {
 					ts := seq[len(seq)-1]
-					ts.Features[2+j] = true
-					ts.Features[2+ImageSize+i] = true
+					ts.Features.Set(2+j, true)
+					ts.Features.Set(2+ImageSize+i, true)
 					m.EvaluateAt(seq, len(seq)-1)
 					num := seqtree.SampleSoftmax(ts.Output)
 					if num == 1 {
@@ -157,9 +157,9 @@ func GenerateSequence(m *seqtree.Model) {
 					}
 					ts = &seqtree.Timestep{
 						Output:   make([]float32, 2),
-						Features: make([]bool, m.NumFeatures()),
+						Features: seqtree.NewBitmap(m.NumFeatures()),
 					}
-					ts.Features[num] = true
+					ts.Features.Set(num, true)
 					seq = append(seq, ts)
 				}
 			}
