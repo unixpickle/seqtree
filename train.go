@@ -186,7 +186,7 @@ func (b *Builder) build(samples []*TimestepSample, depth, nextNewFeature int) *T
 			splitSamples[i] = samples[j]
 		}
 	}
-	feature := optimalFeature(splitSamples, b.ExtraFeatures, b.Horizons)
+	feature := b.optimalFeature(splitSamples)
 
 	var falses, trues []*TimestepSample
 	for _, t := range samples {
@@ -224,7 +224,7 @@ func (b *Builder) build(samples []*TimestepSample, depth, nextNewFeature int) *T
 // The horizons argument specifies how many timesteps in
 // the past we may look. A value of zero indicates that
 // only the current timestep may be inspected.
-func optimalFeature(samples []*TimestepSample, extraFeatures int, horizons []int) BranchFeature {
+func (b *Builder) optimalFeature(samples []*TimestepSample) BranchFeature {
 	if len(samples) == 0 {
 		panic("no data")
 	}
@@ -242,7 +242,7 @@ func optimalFeature(samples []*TimestepSample, extraFeatures int, horizons []int
 		go func() {
 			defer wg.Done()
 			for f := range featureChan {
-				quality := featureSplitQuality(samples, f, gradSum)
+				quality := b.featureSplitQuality(samples, f, gradSum)
 				resultLock.Lock()
 				if quality >= bestQuality {
 					bestFeature = f
@@ -253,10 +253,10 @@ func optimalFeature(samples []*TimestepSample, extraFeatures int, horizons []int
 		}()
 	}
 
-	for _, horizon := range horizons {
+	for _, horizon := range b.Horizons {
 		for i := -1; i < numFeatures; i++ {
-			if i >= numFeatures-extraFeatures {
-				prob := 1 / math.Sqrt(float64(extraFeatures))
+			if i >= numFeatures-b.ExtraFeatures {
+				prob := 1 / math.Sqrt(float64(b.ExtraFeatures))
 				if rand.Float64() > prob {
 					continue
 				}
@@ -271,7 +271,8 @@ func optimalFeature(samples []*TimestepSample, extraFeatures int, horizons []int
 	return bestFeature
 }
 
-func featureSplitQuality(samples []*TimestepSample, f BranchFeature, sum []float32) float32 {
+func (b *Builder) featureSplitQuality(samples []*TimestepSample, f BranchFeature,
+	sum []float32) float32 {
 	falseCount := 0
 	trueCount := 0
 	featureValues := make([]bool, len(samples))
@@ -286,7 +287,8 @@ func featureSplitQuality(samples []*TimestepSample, f BranchFeature, sum []float
 		}
 	}
 
-	if falseCount == 0 || trueCount == 0 {
+	if falseCount == 0 || trueCount == 0 || trueCount < b.MinSplitSamples ||
+		falseCount < b.MinSplitSamples {
 		return 0
 	}
 
