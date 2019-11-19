@@ -186,7 +186,7 @@ func (b *Builder) build(samples []*TimestepSample, depth, nextNewFeature int) *T
 			splitSamples[i] = samples[j]
 		}
 	}
-	feature := b.optimalFeature(splitSamples)
+	feature := b.optimalFeature(splitSamples, float32(len(splitSamples))/float32(len(samples)))
 
 	var falses, trues []*TimestepSample
 	for _, t := range samples {
@@ -224,7 +224,7 @@ func (b *Builder) build(samples []*TimestepSample, depth, nextNewFeature int) *T
 // The horizons argument specifies how many timesteps in
 // the past we may look. A value of zero indicates that
 // only the current timestep may be inspected.
-func (b *Builder) optimalFeature(samples []*TimestepSample) BranchFeature {
+func (b *Builder) optimalFeature(samples []*TimestepSample, sampleFrac float32) BranchFeature {
 	if len(samples) == 0 {
 		panic("no data")
 	}
@@ -242,7 +242,7 @@ func (b *Builder) optimalFeature(samples []*TimestepSample) BranchFeature {
 		go func() {
 			defer wg.Done()
 			for f := range featureChan {
-				quality := b.featureSplitQuality(samples, f, gradSum)
+				quality := b.featureSplitQuality(samples, f, gradSum, sampleFrac)
 				resultLock.Lock()
 				if quality >= bestQuality {
 					bestFeature = f
@@ -272,7 +272,7 @@ func (b *Builder) optimalFeature(samples []*TimestepSample) BranchFeature {
 }
 
 func (b *Builder) featureSplitQuality(samples []*TimestepSample, f BranchFeature,
-	sum []float32) float32 {
+	sum []float32, sampleFrac float32) float32 {
 	falseCount := 0
 	trueCount := 0
 	featureValues := make([]bool, len(samples))
@@ -287,8 +287,9 @@ func (b *Builder) featureSplitQuality(samples []*TimestepSample, f BranchFeature
 		}
 	}
 
-	if falseCount == 0 || trueCount == 0 || trueCount < b.MinSplitSamples ||
-		falseCount < b.MinSplitSamples {
+	minSamples := int(sampleFrac * float32(b.MinSplitSamples))
+	if falseCount == 0 || trueCount == 0 || trueCount < minSamples ||
+		falseCount < minSamples {
 		return 0
 	}
 
