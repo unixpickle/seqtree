@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"runtime"
 	"testing"
 )
 
@@ -36,10 +37,15 @@ func TestOptimalStep(t *testing.T) {
 }
 
 func BenchmarkOptimalStep(b *testing.B) {
+	oldCount := runtime.GOMAXPROCS(0)
+	runtime.GOMAXPROCS(1)
+	defer runtime.GOMAXPROCS(oldCount)
+
 	for _, baseFeatures := range []int{2, 10} {
 		name := fmt.Sprintf("Features%d", baseFeatures)
 		b.Run(name, func(b *testing.B) {
 			for i := 0; i < 10; i++ {
+				b.StopTimer()
 				m := generateTestModel(baseFeatures)
 				builder := &Builder{
 					Depth:           3,
@@ -48,6 +54,7 @@ func BenchmarkOptimalStep(b *testing.B) {
 				}
 				ts := AllTimesteps(generateTestSequences(m)...)
 				tree := builder.Build(ts)
+				b.StartTimer()
 
 				for j := 0; j < b.N; j++ {
 					OptimalStep(ts, tree, 40.0, 100)
