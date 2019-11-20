@@ -53,18 +53,35 @@ func BoundedStep(timesteps []*TimestepSample, t *Tree, maxKL, maxStep float32) f
 // OptimalStep performs a line search to find a step size
 // that maximizes loss improvement.
 func OptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32, iters int) float32 {
+	// Golden section search:
+	// https://en.wikipedia.org/wiki/Golden-section_search
+
 	minStep := float32(0.0)
+	var midValue1, midValue2 *float32
+
 	for i := 0; i < iters; i++ {
-		midStep1 := minStep*0.75 + maxStep*0.25
-		value1 := AvgLossDelta(timesteps, t, midStep1)
-		midStep2 := minStep*0.25 + maxStep*0.75
-		value2 := AvgLossDelta(timesteps, t, midStep2)
-		if value2 < value1 {
-			minStep = midStep1
+		mid1 := maxStep - (maxStep-minStep)/math.Phi
+		mid2 := minStep + (maxStep-minStep)/math.Phi
+		if midValue1 == nil {
+			x := AvgLossDelta(timesteps, t, mid1)
+			midValue1 = &x
+		}
+		if midValue2 == nil {
+			x := AvgLossDelta(timesteps, t, mid2)
+			midValue2 = &x
+		}
+
+		if *midValue2 < *midValue1 {
+			minStep = mid1
+			midValue1 = midValue2
+			midValue2 = nil
 		} else {
-			maxStep = midStep2
+			maxStep = mid2
+			midValue2 = midValue1
+			midValue1 = nil
 		}
 	}
+
 	return (minStep + maxStep) / 2
 }
 
