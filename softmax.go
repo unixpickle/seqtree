@@ -28,10 +28,27 @@ func SampleSoftmax(outputs []float32) int {
 // SoftmaxLoss computes the loss function given output
 // logits and target probabilities.
 func SoftmaxLoss(outputs, targets []float32) float32 {
-	probs := logSoftmax(outputs)
+	// Code duplication from logSoftmax() prevents
+	// allocations and can speedup computation
+	// significantly.
+
+	max := outputs[0]
+	for _, x := range outputs[1:] {
+		if x > max {
+			max = x
+		}
+	}
+
+	var sumOfExp float64
+	for _, x := range outputs {
+		sumOfExp += math.Exp(float64(x - max))
+	}
+
+	subtractor := max + float32(math.Log(float64(sumOfExp)))
+
 	var loss float32
-	for i, x := range targets {
-		loss -= x * probs[i]
+	for i, x := range outputs {
+		loss += (subtractor - x) * targets[i]
 	}
 	return loss
 }
