@@ -18,11 +18,13 @@ import (
 )
 
 const (
-	Batch           = 2000
-	ImageSize       = 28
-	Depth           = 4
-	MaxStep         = 20.0
-	MinSplitSamples = 100
+	Batch     = 4000
+	ImageSize = 28
+	Depth     = 4
+	MaxStep   = 20.0
+
+	MinSplitSamplesMin = 100
+	MinSplitSamplesMax = 1000
 
 	// Split with a small subset of the entire batch.
 	MaxSplitSamples = 10 * ImageSize * ImageSize
@@ -47,7 +49,6 @@ func main() {
 	builder := seqtree.Builder{
 		Depth:           Depth,
 		Horizons:        horizons,
-		MinSplitSamples: MinSplitSamples,
 		MaxSplitSamples: MaxSplitSamples,
 		CandidateSplits: CandidateSplits,
 	}
@@ -63,6 +64,8 @@ func main() {
 		}
 		totalLoss /= Batch
 
+		builder.MinSplitSamples = rand.Intn(MinSplitSamplesMax-MinSplitSamplesMin) +
+			MinSplitSamplesMin
 		builder.ExtraFeatures = model.ExtraFeatures
 		tree := builder.Build(seqtree.AllTimesteps(seqs...))
 
@@ -76,7 +79,8 @@ func main() {
 			model.Add(tree, stepSize)
 		}
 
-		log.Printf("step %d: loss=%f step_size=%f loss_delta=%f", i, totalLoss, stepSize, -delta)
+		log.Printf("step %d: loss=%f step_size=%f loss_delta=%f min_leaf=%d",
+			i, totalLoss, stepSize, -delta, builder.MinSplitSamples)
 
 		GenerateSequence(model)
 		model.Save("model.json")
