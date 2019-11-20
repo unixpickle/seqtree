@@ -152,13 +152,22 @@ type Builder struct {
 	MinSplitSamples int
 
 	// MaxSplitSamples is the maximum number of samples to
-	// use for calculating optimal splits. If there are
+	// use for sorting features for splits. If there are
 	// more samples than this, then a random subset of
 	// samples are used.
 	//
 	// Setting this to zero has the special meaning of
 	// using all of the samples for every split.
 	MaxSplitSamples int
+
+	// CandidateSplits specifies the number of top splits
+	// to evaluate on the full set of samples.
+	// This can be used with MaxSplitSamples to find good
+	// splits using a subset of the data, and then pick
+	// the best of these using all of the data.
+	//
+	// If zero, the top usable split is selected.
+	CandidateSplits int
 
 	// Horizons specifies the steps in the past to look at
 	// features for splits.
@@ -203,44 +212,82 @@ func (b *Builder) build(samples []*TimestepSample, depth, nextNewFeature int) *T
 			splitSamples[i] = samples[j]
 		}
 	}
-	features := b.optimalFeatures(splitSamples, float32(len(splitSamples))/float32(len(samples)))
+	features := b.sortFeatures(splitSamples, float32(len(splitSamples))/float32(len(samples)))
 
-	for _, feature := range features {
-		var falses, trues []*TimestepSample
-		for _, t := range samples {
-			if t.BranchFeature(feature) {
-				trues = append(trues, t)
-			} else {
-				falses = append(falses, t)
-			}
+	var bestFeature *BranchFeature
+	if len(splitSamples) == len(samples) {
+		if len(features) > 0 {
+			bestFeature = &features[0]
 		}
+	} else {
+		bestFeature = b.optimalFeature(samples, features)
+	}
 
-		if len(trues) == 0 || len(falses) == 0 || len(trues) < b.MinSplitSamples ||
-			len(falses) < b.MinSplitSamples {
-			// The split is not allowed.
-			continue
-		}
+	if bestFeature == nil {
+		return b.build(samples, 0, nextNewFeature)
+	}
 
-		tree1 := b.build(falses, depth-1, nextNewFeature)
-		tree2 := b.build(trues, depth-1, nextNewFeature+tree1.NumFeatures())
-		return &Tree{
-			Branch: &Branch{
-				Feature:     feature,
-				FalseBranch: tree1,
-				TrueBranch:  tree2,
-			},
+	var falses, trues []*TimestepSample
+	for _, t := range samples {
+		if t.BranchFeature(*bestFeature) {
+			trues = append(trues, t)
+		} else {
+			falses = append(falses, t)
 		}
 	}
 
-	return b.build(samples, 0, nextNewFeature)
+	tree1 := b.build(falses, depth-1, nextNewFeature)
+	tree2 := b.build(trues, depth-1, nextNewFeature+tree1.NumFeatures())
+	return &Tree{
+		Branch: &Branch{
+			Feature:     *bestFeature,
+			FalseBranch: tree1,
+			TrueBranch:  tree2,
+		},
+	}
 }
 
-// optimalFeatures finds features which produce reasonable
+// optimalFeature finds the best feature from a set of
+// ranked features.
+func (b *Builder) optimalFeature(samples []*TimestepSample,
+	features []BranchFeature) *BranchFeature {
+	sum := gradientSum(samples)
+
+	var bestFeature BranchFeature
+	var bestQuality float32
+	var featuresTested int
+
+	for _, feature := range features {
+		quality := b.featureSplitQuality(samples, feature, sum, 1.0)
+		if quality == 0 {
+			continue
+		}
+
+		if featuresTested == 0 {
+			bestFeature = feature
+			bestQuality = quality
+		} else if quality > bestQuality {
+			bestFeature = feature
+			bestQuality = quality
+		}
+
+		featuresTested++
+		if featuresTested >= b.CandidateSplits {
+			break
+		}
+	}
+	if featuresTested == 0 {
+		return nil
+	}
+	return &bestFeature
+}
+
+// sortFeatures finds features which produce reasonable
 // splits and sorts them by quality.
 //
 // This assumes that the timesteps all have a gradient
 // set.
-func (b *Builder) optimalFeatures(samples []*TimestepSample, sampleFrac float32) []BranchFeature {
+func (b *Builder) sortFeatures(samples []*TimestepSample, sampleFrac float32) []BranchFeature {
 	if len(samples) == 0 {
 		panic("no data")
 	}

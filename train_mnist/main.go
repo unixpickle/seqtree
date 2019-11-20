@@ -27,6 +27,7 @@ const (
 
 	// Split with a small subset of the entire batch.
 	MaxSplitSamples = 10 * ImageSize * ImageSize
+	CandidateSplits = 20
 )
 
 func main() {
@@ -49,6 +50,7 @@ func main() {
 		Horizons:        horizons,
 		MinSplitSamples: MinSplitSamples,
 		MaxSplitSamples: MaxSplitSamples,
+		CandidateSplits: CandidateSplits,
 	}
 
 	for i := 0; true; i++ {
