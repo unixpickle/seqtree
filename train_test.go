@@ -35,6 +35,28 @@ func TestOptimalStep(t *testing.T) {
 	}
 }
 
+func BenchmarkOptimalStep(b *testing.B) {
+	for _, baseFeatures := range []int{2, 10} {
+		name := fmt.Sprintf("Features%d", baseFeatures)
+		b.Run(name, func(b *testing.B) {
+			for i := 0; i < 10; i++ {
+				m := generateTestModel(baseFeatures)
+				builder := &Builder{
+					Depth:           3,
+					MinSplitSamples: 10,
+					Horizons:        []int{0, 1, 2},
+				}
+				ts := AllTimesteps(generateTestSequences(m)...)
+				tree := builder.Build(ts)
+
+				for j := 0; j < b.N; j++ {
+					OptimalStep(ts, tree, 40.0, 100)
+				}
+			}
+		})
+	}
+}
+
 func bruteForceOptimalStep(ts []*TimestepSample, t *Tree, stepsLeft int, min, max float32) float32 {
 	var minimum float32
 	var minStep float32
