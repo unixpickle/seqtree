@@ -51,10 +51,45 @@ func BoundedStep(timesteps []*TimestepSample, t *Tree, maxKL, maxStep float32) f
 }
 
 // OptimalStep performs a line search to find a step size
-// that maximizes loss improvement.
+// that minimizes the loss.
 func OptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32, iters int) float32 {
+	outputDeltas := make([][]float32, len(timesteps))
+	for i, ts := range timesteps {
+		outputDeltas[i] = t.Evaluate(ts).OutputDelta
+	}
+
 	// Golden section search:
 	// https://en.wikipedia.org/wiki/Golden-section_search
+	lossForStep := func(stepSize float32) float32 {
+		var lock sync.Mutex
+		var currentLoss float32
+
+		var wg sync.WaitGroup
+		numProcs := runtime.GOMAXPROCS(0)
+		for i := 0; i < numProcs; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				total := newKahanSum(1)
+				tmpAddition := []float32{0.0}
+				tmpOutput := make([]float32, len(timesteps[0].Timestep().Output))
+				for j := i; j < len(outputDeltas); j += numProcs {
+					outputDelta := outputDeltas[j]
+					ts := timesteps[j].Timestep()
+					for i, x := range ts.Output {
+						tmpOutput[i] = x - stepSize*outputDelta[i]
+					}
+					tmpAddition[0] = SoftmaxLoss(tmpOutput, ts.Target)
+					total.Add(tmpAddition)
+				}
+				lock.Lock()
+				currentLoss += total.Sum()[0]
+				lock.Unlock()
+			}(i)
+		}
+		wg.Wait()
+		return currentLoss / float32(len(timesteps))
+	}
 
 	minStep := float32(0.0)
 	var midValue1, midValue2 *float32
@@ -63,11 +98,11 @@ func OptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32, iters in
 		mid1 := maxStep - (maxStep-minStep)/math.Phi
 		mid2 := minStep + (maxStep-minStep)/math.Phi
 		if midValue1 == nil {
-			x := AvgLossDelta(timesteps, t, mid1)
+			x := lossForStep(mid1)
 			midValue1 = &x
 		}
 		if midValue2 == nil {
-			x := AvgLossDelta(timesteps, t, mid2)
+			x := lossForStep(mid2)
 			midValue2 = &x
 		}
 
