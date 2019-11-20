@@ -91,7 +91,7 @@ func (t *TimestepSample) BranchFeature(b BranchFeature) bool {
 		return false
 	}
 	ts := t.Sequence[t.Index-b.StepsInPast]
-	return ts.Features.Get(b.Feature)
+	return ts.Features.getUnchecked(b.Feature)
 }
 
 // Timestep gets the corresponding Timestep.
@@ -124,6 +124,10 @@ func (b *Bitmap) Get(i int) bool {
 	if i < 0 || i >= b.numBits {
 		panic("index out of range")
 	}
+	return b.bytes[i>>3]&(1<<uint(i&7)) != 0
+}
+
+func (b *Bitmap) getUnchecked(i int) bool {
 	return b.bytes[i>>3]&(1<<uint(i&7)) != 0
 }
 
