@@ -77,6 +77,22 @@ func SoftmaxLossGrad(outputs, targets []float32) []float32 {
 	return grad
 }
 
+// SoftmaxLossNaturalGrad is like SoftmaxLossGrad, except
+// the natural functional gradient is used.
+func SoftmaxLossNaturalGrad(outputs, targets []float32) []float32 {
+	prob := float32(math.Exp(float64(-SoftmaxLoss(outputs, targets))))
+
+	// Add a small epsilon to prevent divide-by-zero.
+	prob += 1e-4
+
+	baseGrad := 1.0 / (float32(len(outputs)) * prob)
+	naturalGrad := make([]float32, len(outputs))
+	for i, x := range targets {
+		naturalGrad[i] = baseGrad * (1 - x*float32(len(outputs)))
+	}
+	return naturalGrad
+}
+
 // SoftmaxLossKL computes
 //
 //     KL(softmax(outputs+deltas*stepSize)||softmax(outputs))

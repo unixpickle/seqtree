@@ -58,6 +58,14 @@ func (s Sequence) PropagateLoss() {
 	}
 }
 
+// PropagateLossNatural is like PropagateLoss, but it uses
+// the natural gradient.
+func (s Sequence) PropagateLossNatural() {
+	for _, t := range s {
+		t.Gradient = SoftmaxLossNaturalGrad(t.Output, t.Target)
+	}
+}
+
 // Timestep represents a single timestep in a sequence.
 type Timestep struct {
 	// Features stores the current feature bitmap.

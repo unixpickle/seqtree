@@ -123,6 +123,16 @@ func OptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32, iters in
 // PropagateLosses computes the gradients for every
 // sequence and sets the timesteps' Gradient fields.
 func PropagateLosses(seqs []Sequence) {
+	propagateLosses(seqs, false)
+}
+
+// PropagateLossesNatural is like PropagateLosses, except
+// that it uses the natural gradient.
+func PropagateLossesNatural(seqs []Sequence) {
+	propagateLosses(seqs, true)
+}
+
+func propagateLosses(seqs []Sequence, natural bool) {
 	ch := make(chan Sequence, len(seqs))
 	for _, seq := range seqs {
 		ch <- seq
@@ -135,7 +145,11 @@ func PropagateLosses(seqs []Sequence) {
 		go func() {
 			defer wg.Done()
 			for seq := range ch {
-				seq.PropagateLoss()
+				if natural {
+					seq.PropagateLossNatural()
+				} else {
+					seq.PropagateLoss()
+				}
 			}
 		}()
 	}
