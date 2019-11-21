@@ -10,20 +10,22 @@ import (
 )
 
 const (
-	Batch           = 200
+	Batch           = 2000
+	SplitBatch      = 100
 	Length          = 20
-	Depth           = 3
-	Step            = 0.5
-	MinSplitSamples = 2
-
-	WarmupStep  = 5.0
-	WarmupSteps = 100
+	Depth           = 4
+	MinSplitSamples = 20
+	MaxStep         = 40.0
+	MaxUnion        = 5
+	CandidateSplits = 20
 )
 
 var Horizons = []int{0, 1, 2, 3}
 
 func main() {
 	model := &seqtree.Model{BaseFeatures: 256}
+	model.Load("model.json")
+
 	textData, err := ioutil.ReadFile("/usr/share/dict/words")
 	essentials.Must(err)
 
@@ -31,6 +33,9 @@ func main() {
 		Depth:           Depth,
 		Horizons:        Horizons,
 		MinSplitSamples: MinSplitSamples,
+		MaxSplitSamples: SplitBatch * Length,
+		MaxUnion:        MaxUnion,
+		CandidateSplits: CandidateSplits,
 	}
 
 	for i := 0; true; i++ {
@@ -45,16 +50,19 @@ func main() {
 
 		builder.ExtraFeatures = model.ExtraFeatures
 		tree := builder.Build(seqtree.AllTimesteps(seqs...))
-		if i < WarmupSteps {
-			model.Add(tree, WarmupStep)
-		} else {
-			model.Add(tree, Step)
-		}
 
-		log.Printf("step %d: loss=%f", i, loss/Batch)
+		seqs = SampleSequences(textData, model, Batch, Length)
+		model.EvaluateAll(seqs)
+		stepSize := seqtree.OptimalStep(seqtree.AllTimesteps(seqs...), tree, MaxStep, 30)
+		delta := seqtree.AvgLossDelta(seqtree.AllTimesteps(seqs...), tree, stepSize)
+		model.Add(tree, stepSize)
+
+		log.Printf("step %d: loss=%f step_size=%f loss_delta=%f",
+			i, loss/Batch, stepSize, -delta)
 		if i%10 == 0 {
-			GenerateSequence(model, 20)
+			GenerateSequence(model, Length)
 		}
+		model.Save("model.json")
 	}
 }
 
