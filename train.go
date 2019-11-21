@@ -202,6 +202,9 @@ type Builder struct {
 	// the best of these using all of the data.
 	//
 	// If zero, the top usable split is selected.
+	//
+	// This is used as a lower bound. A few extra splits
+	// may be tested, at negligible performance cost.
 	CandidateSplits int
 
 	// MaxUnion is the maximum number of features to
@@ -313,29 +316,62 @@ func (b *Builder) optimalFeature(falses, trues []*TimestepSample,
 	falseSum := gradientSum(falses, 0)
 	trueSum := gradientSum(trues, len(falseSum))
 
+	if b.CandidateSplits <= 1 {
+		for _, feature := range features {
+			quality := b.featureSplitQuality(falses, trues, falseSum, trueSum, feature, 1.0)
+			if quality > 0 {
+				return &feature
+			}
+		}
+		return nil
+	}
+
+	var lock sync.Mutex
 	var bestFeature BranchFeature
 	var bestQuality float32
 	var featuresTested int
 
+	featureChan := make(chan BranchFeature, 0)
+	var wg sync.WaitGroup
+
+	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for feature := range featureChan {
+				quality := b.featureSplitQuality(falses, trues, falseSum, trueSum, feature, 1.0)
+				if quality <= 0 {
+					continue
+				}
+				lock.Lock()
+				if featuresTested == 0 {
+					bestFeature = feature
+					bestQuality = quality
+				} else if quality > bestQuality {
+					bestFeature = feature
+					bestQuality = quality
+				}
+				featuresTested++
+				lock.Unlock()
+			}
+		}()
+	}
+
 	for _, feature := range features {
-		quality := b.featureSplitQuality(falses, trues, falseSum, trueSum, feature, 1.0)
-		if quality <= 0 {
-			continue
-		}
-
-		if featuresTested == 0 {
-			bestFeature = feature
-			bestQuality = quality
-		} else if quality > bestQuality {
-			bestFeature = feature
-			bestQuality = quality
-		}
-
-		featuresTested++
-		if featuresTested >= b.CandidateSplits {
+		featureChan <- feature
+		lock.Lock()
+		count := featuresTested
+		lock.Unlock()
+		// We will almost certainly check more than
+		// b.CandidateSplits features, but that's
+		// acceptable behavior.
+		if count >= b.CandidateSplits {
 			break
 		}
 	}
+	close(featureChan)
+	wg.Wait()
+
 	if featuresTested == 0 {
 		return nil
 	}
