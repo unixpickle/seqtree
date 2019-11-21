@@ -21,6 +21,7 @@ const (
 	Batch     = 4000
 	ImageSize = 28
 	Depth     = 4
+	MaxUnion  = 3
 	MaxStep   = 20.0
 
 	MinSplitSamplesMin = 100
@@ -50,6 +51,7 @@ func main() {
 		Depth:           Depth,
 		Horizons:        horizons,
 		MaxSplitSamples: MaxSplitSamples,
+		MaxUnion:        MaxUnion,
 		CandidateSplits: CandidateSplits,
 	}
 
