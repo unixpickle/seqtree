@@ -127,11 +127,12 @@ func (t *Tree) Evaluate(ts *TimestepSample) *Leaf {
 	if t.Leaf != nil {
 		return t.Leaf
 	}
-	if ts.BranchFeature(t.Branch.Feature) {
-		return t.Branch.TrueBranch.Evaluate(ts)
-	} else {
-		return t.Branch.FalseBranch.Evaluate(ts)
+	for _, f := range t.Branch.Feature {
+		if ts.BranchFeature(f) {
+			return t.Branch.TrueBranch.Evaluate(ts)
+		}
 	}
+	return t.Branch.FalseBranch.Evaluate(ts)
 }
 
 // NumFeatures gets the number of new features added by
@@ -163,7 +164,7 @@ func (t *Tree) Scale(s float32) {
 // Branch represents tree nodes that split into two
 // sub-nodes.
 type Branch struct {
-	Feature     BranchFeature
+	Feature     BranchFeatureUnion
 	FalseBranch *Tree
 	TrueBranch  *Tree
 }
@@ -193,3 +194,7 @@ type BranchFeature struct {
 	// feature at the most recent timestep.
 	StepsInPast int
 }
+
+// A BranchFeatureUnion is a logical OR of BranchFeatures.
+// An empty union is always false.
+type BranchFeatureUnion []BranchFeature

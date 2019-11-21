@@ -204,6 +204,12 @@ type Builder struct {
 	// If zero, the top usable split is selected.
 	CandidateSplits int
 
+	// MaxUnion is the maximum number of features to
+	// include in a union.
+	// The special value 0 is treated as 1, indicating
+	// that single features should be used.
+	MaxUnion int
+
 	// Horizons specifies the steps in the past to look at
 	// features for splits.
 	Horizons []int
@@ -239,43 +245,61 @@ func (b *Builder) build(samples []*TimestepSample, depth, nextNewFeature int) *T
 			},
 		}
 	}
+	return b.buildUnion(nil, samples, nil, depth, nextNewFeature)
+}
 
-	splitSamples := samples
+func (b *Builder) buildUnion(union BranchFeatureUnion, falses, trues []*TimestepSample, depth,
+	nextNewFeature int) *Tree {
+	if len(union) > 0 && len(union) >= b.MaxUnion {
+		return b.buildSubtree(union, falses, trues, depth, nextNewFeature)
+	}
+
+	splitSamples := falses
 	if b.MaxSplitSamples != 0 && len(splitSamples) > b.MaxSplitSamples {
 		splitSamples = make([]*TimestepSample, b.MaxSplitSamples)
 		for i, j := range rand.Perm(len(splitSamples))[:b.MaxSplitSamples] {
-			splitSamples[i] = samples[j]
+			splitSamples[i] = falses[j]
 		}
 	}
-	features := b.sortFeatures(splitSamples, float32(len(splitSamples))/float32(len(samples)))
+	sampleFrac := float32(float64(len(splitSamples)) / float64(len(falses)))
+	features := b.sortFeatures(splitSamples, trues, sampleFrac)
 
 	var bestFeature *BranchFeature
-	if len(splitSamples) == len(samples) {
+	if len(splitSamples) == len(falses) {
+		// sortFeatures() gave an exact result.
 		if len(features) > 0 {
 			bestFeature = &features[0]
 		}
 	} else {
-		bestFeature = b.optimalFeature(samples, features)
+		bestFeature = b.optimalFeature(falses, trues, features)
 	}
 
 	if bestFeature == nil {
-		return b.build(samples, 0, nextNewFeature)
+		return b.buildSubtree(union, falses, trues, depth, nextNewFeature)
 	}
 
-	var falses, trues []*TimestepSample
-	for _, t := range samples {
-		if t.BranchFeature(*bestFeature) {
-			trues = append(trues, t)
+	var newFalses []*TimestepSample
+	for _, sample := range falses {
+		if sample.BranchFeature(*bestFeature) {
+			trues = append(trues, sample)
 		} else {
-			falses = append(falses, t)
+			newFalses = append(newFalses, sample)
 		}
 	}
 
+	return b.buildUnion(append(union, *bestFeature), newFalses, trues, depth, nextNewFeature)
+}
+
+func (b *Builder) buildSubtree(union BranchFeatureUnion, falses, trues []*TimestepSample,
+	depth, nextNewFeature int) *Tree {
+	if len(union) == 0 {
+		return b.build(falses, 0, nextNewFeature)
+	}
 	tree1 := b.build(falses, depth-1, nextNewFeature)
 	tree2 := b.build(trues, depth-1, nextNewFeature+tree1.NumFeatures())
 	return &Tree{
 		Branch: &Branch{
-			Feature:     *bestFeature,
+			Feature:     union,
 			FalseBranch: tree1,
 			TrueBranch:  tree2,
 		},
@@ -284,17 +308,18 @@ func (b *Builder) build(samples []*TimestepSample, depth, nextNewFeature int) *T
 
 // optimalFeature finds the best feature from a set of
 // ranked features.
-func (b *Builder) optimalFeature(samples []*TimestepSample,
+func (b *Builder) optimalFeature(falses, trues []*TimestepSample,
 	features []BranchFeature) *BranchFeature {
-	sum := gradientSum(samples)
+	falseSum := gradientSum(falses, 0)
+	trueSum := gradientSum(trues, len(falseSum))
 
 	var bestFeature BranchFeature
 	var bestQuality float32
 	var featuresTested int
 
 	for _, feature := range features {
-		quality := b.featureSplitQuality(samples, feature, sum, 1.0)
-		if quality == 0 {
+		quality := b.featureSplitQuality(falses, trues, falseSum, trueSum, feature, 1.0)
+		if quality <= 0 {
 			continue
 		}
 
@@ -319,15 +344,14 @@ func (b *Builder) optimalFeature(samples []*TimestepSample,
 
 // sortFeatures finds features which produce reasonable
 // splits and sorts them by quality.
-//
-// This assumes that the timesteps all have a gradient
-// set.
-func (b *Builder) sortFeatures(samples []*TimestepSample, sampleFrac float32) []BranchFeature {
-	if len(samples) == 0 {
+func (b *Builder) sortFeatures(falses, trues []*TimestepSample,
+	sampleFrac float32) []BranchFeature {
+	if len(falses) == 0 {
 		panic("no data")
 	}
-	numFeatures := samples[0].Timestep().Features.Len()
-	gradSum := gradientSum(samples)
+	numFeatures := falses[0].Timestep().Features.Len()
+	falseSum := gradientSum(falses, 0)
+	trueSum := gradientSum(trues, len(falseSum))
 
 	var resultLock sync.Mutex
 	var features []BranchFeature
@@ -340,7 +364,7 @@ func (b *Builder) sortFeatures(samples []*TimestepSample, sampleFrac float32) []
 		go func() {
 			defer wg.Done()
 			for f := range featureChan {
-				quality := b.featureSplitQuality(samples, f, gradSum, sampleFrac)
+				quality := b.featureSplitQuality(falses, trues, falseSum, trueSum, f, sampleFrac)
 				if quality > 0 {
 					resultLock.Lock()
 					features = append(features, f)
@@ -372,48 +396,63 @@ func (b *Builder) sortFeatures(samples []*TimestepSample, sampleFrac float32) []
 	return features
 }
 
-func (b *Builder) featureSplitQuality(samples []*TimestepSample, f BranchFeature,
-	sum []float32, sampleFrac float32) float32 {
-	falseCount := 0
-	trueCount := 0
-	featureValues := make([]bool, len(samples))
-
-	for i, t := range samples {
+func (b *Builder) featureSplitQuality(falses, trues []*TimestepSample, falseSum, trueSum []float32,
+	f BranchFeature, sampleFrac float32) float32 {
+	splitFalseCount := 0
+	splitTrueCount := 0
+	featureValues := make([]bool, len(falses))
+	for i, t := range falses {
 		val := t.BranchFeature(f)
 		featureValues[i] = val
 		if val {
-			trueCount++
+			splitTrueCount++
 		} else {
-			falseCount++
+			splitFalseCount++
 		}
 	}
 
-	minSamples := int(sampleFrac * float32(b.MinSplitSamples))
-	if falseCount == 0 || trueCount == 0 || trueCount < minSamples ||
-		falseCount < minSamples {
+	approxTrues := float32(len(trues)) + float32(splitTrueCount)/sampleFrac
+	approxFalses := float32(len(falses)-splitTrueCount) / sampleFrac
+
+	if splitFalseCount == 0 || splitTrueCount == 0 ||
+		int(approxTrues) < b.MinSplitSamples ||
+		int(approxFalses) < b.MinSplitSamples {
 		// The split is unlikely to be allowed.
 		return 0
 	}
 
-	minoritySum := make([]float32, len(sum))
+	trueIsMinority := splitTrueCount < splitFalseCount
+
+	minoritySum := make([]float32, len(falseSum))
 	for i, val := range featureValues {
-		if val == (trueCount < falseCount) {
-			for j, x := range samples[i].Timestep().Gradient {
+		if val == trueIsMinority {
+			for j, x := range falses[i].Timestep().Gradient {
 				minoritySum[j] += x
 			}
 		}
 	}
 
-	majoritySum := make([]float32, len(sum))
-	for i, x := range sum {
+	majoritySum := make([]float32, len(falseSum))
+	for i, x := range falseSum {
 		majoritySum[i] = x - minoritySum[i]
 	}
 
-	minorityCount := essentials.MinInt(falseCount, trueCount)
-	majorityCount := essentials.MaxInt(falseCount, trueCount)
+	newTrueSum, newFalseSum := minoritySum, majoritySum
+	if !trueIsMinority {
+		newTrueSum, newFalseSum = majoritySum, minoritySum
+	}
 
-	return vectorNormSquared(minoritySum)/float32(minorityCount) +
-		vectorNormSquared(majoritySum)/float32(majorityCount)
+	for i, x := range trueSum {
+		newTrueSum[i] += x * sampleFrac
+	}
+	effectiveTrueCount := float32(splitTrueCount) + float32(len(trues))*sampleFrac
+
+	newQuality := vectorNormSquared(newFalseSum)/float32(splitFalseCount) +
+		vectorNormSquared(newTrueSum)/effectiveTrueCount
+	oldQuality := vectorNormSquared(falseSum)/float32(len(falses)) +
+		vectorNormSquared(trueSum)*sampleFrac/float32(essentials.MaxInt(1, len(trues)))
+
+	return newQuality - oldQuality
 }
 
 func vectorNormSquared(v []float32) float32 {
@@ -424,8 +463,11 @@ func vectorNormSquared(v []float32) float32 {
 	return res
 }
 
-func gradientSum(ts []*TimestepSample) []float32 {
-	sum := newKahanSum(len(ts[0].Timestep().Gradient))
+func gradientSum(ts []*TimestepSample, dim int) []float32 {
+	if dim == 0 {
+		dim = len(ts[0].Timestep().Gradient)
+	}
+	sum := newKahanSum(dim)
 	for _, t := range ts {
 		sum.Add(t.Timestep().Gradient)
 	}
@@ -433,7 +475,7 @@ func gradientSum(ts []*TimestepSample) []float32 {
 }
 
 func gradientMean(ts []*TimestepSample) []float32 {
-	sum := gradientSum(ts)
+	sum := gradientSum(ts, 0)
 	scale := 1 / float32(len(ts))
 	for i := range sum {
 		sum[i] *= scale

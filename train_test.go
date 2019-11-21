@@ -117,7 +117,9 @@ func BenchmarkBuildTreeDense(b *testing.B) {
 	}
 	m := &Model{BaseFeatures: 2}
 	seq := MakeOneHotSequence(seqInts, 2, m.NumFeatures())
+	PropagateLosses([]Sequence{seq})
 	builder := Builder{Depth: 3, Horizons: []int{0, 1, 2, 28, 29, 30, 56, 57, 58}}
+	b.ResetTimer()
 	for i := 0; i <= b.N; i++ {
 		builder.Build(AllTimesteps(seq))
 	}
