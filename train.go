@@ -239,6 +239,12 @@ func (b *Builder) Build(samples []*TimestepSample) *Tree {
 	return b.build(samples, b.Depth, numFeatures)
 }
 
+// build recursively creates a tree that splits up the
+// samples in order to fit the functional gradient.
+//
+// The nextNewFeature argument specifies the current
+// number of features, so that new leaves can be assigned
+// unused feature numbers.
 func (b *Builder) build(samples []*TimestepSample, depth, nextNewFeature int) *Tree {
 	if depth == 0 || len(samples) <= b.MinSplitSamples {
 		return &Tree{
@@ -251,6 +257,17 @@ func (b *Builder) build(samples []*TimestepSample, depth, nextNewFeature int) *T
 	return b.buildUnion(nil, samples, nil, depth, nextNewFeature)
 }
 
+// buildUnion is like build(), but it starts with a
+// potentially non-empty set of split features to OR
+// together.
+//
+// The falses argument specifies all of the samples which
+// are negatively classified by the current union, while
+// the trues argument specifies those samples which are
+// positively classified by it.
+//
+// This function may modify the trues slice, but not the
+// falses slice.
 func (b *Builder) buildUnion(union BranchFeatureUnion, falses, trues []*TimestepSample, depth,
 	nextNewFeature int) *Tree {
 	if len(union) > 0 && len(union) >= b.MaxUnion {
@@ -293,6 +310,8 @@ func (b *Builder) buildUnion(union BranchFeatureUnion, falses, trues []*Timestep
 	return b.buildUnion(append(union, *bestFeature), newFalses, trues, depth, nextNewFeature)
 }
 
+// buildSubtree creates the branches (or leaf) node for
+// the given union and its resulting split.
 func (b *Builder) buildSubtree(union BranchFeatureUnion, falses, trues []*TimestepSample,
 	depth, nextNewFeature int) *Tree {
 	if len(union) == 0 {
@@ -311,6 +330,11 @@ func (b *Builder) buildSubtree(union BranchFeatureUnion, falses, trues []*Timest
 
 // optimalFeature finds the best feature from a set of
 // ranked features.
+//
+// The features are added on to an existing union.
+// The current split is indicated by falses and trues.
+// It is assumed that the newly selected feature will act
+// to move samples from falses into trues.
 func (b *Builder) optimalFeature(falses, trues []*TimestepSample,
 	features []BranchFeature) *BranchFeature {
 	falseSum := gradientSum(falses, 0)
@@ -380,6 +404,16 @@ func (b *Builder) optimalFeature(falses, trues []*TimestepSample,
 
 // sortFeatures finds features which produce reasonable
 // splits and sorts them by quality.
+//
+// The falses and trues arguments represent the current
+// split.
+//
+// This may be used with a subset of all of the
+// falses, in order to improve performance.
+// In this case, sampleFrac is less than 1.0 and indicates
+// the fraction of the original falses slice that was
+// passed.
+// The trues argument is never a subset.
 func (b *Builder) sortFeatures(falses, trues []*TimestepSample,
 	sampleFrac float32) []BranchFeature {
 	if len(falses) == 0 {
@@ -432,6 +466,14 @@ func (b *Builder) sortFeatures(falses, trues []*TimestepSample,
 	return features
 }
 
+// featureSplitQuality evaluates a given split.
+// The result is greater for better splits.
+//
+// The falseSum and trueSum arguments are the precomputed
+// gradient sums for falses and trues, respectively.
+// These sums are precomputed to improve performance.
+//
+// See sortFeatures() for details on sampleFrac.
 func (b *Builder) featureSplitQuality(falses, trues []*TimestepSample, falseSum, trueSum []float32,
 	f BranchFeature, sampleFrac float32) float32 {
 	splitFalseCount := 0
