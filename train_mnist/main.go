@@ -18,11 +18,14 @@ import (
 )
 
 const (
-	Batch     = 4000
-	ImageSize = 28
-	Depth     = 4
-	MaxUnion  = 3
-	MaxStep   = 20.0
+	ImageSize                = 28
+	HorizontalReceptiveField = 5
+	VerticalReceptiveField   = 9
+
+	Batch    = 4000
+	Depth    = 4
+	MaxUnion = 3
+	MaxStep  = 20.0
 
 	MinSplitSamplesMin = 100
 	MinSplitSamplesMax = 1000
@@ -35,8 +38,8 @@ const (
 func main() {
 	rand.Seed(time.Now().UnixNano())
 	horizons := []int{}
-	for i := -4; i <= 4; i++ {
-		for j := 0; j <= 4; j++ {
+	for i := -HorizontalReceptiveField; i < HorizontalReceptiveField; i++ {
+		for j := 0; j < VerticalReceptiveField; j++ {
 			if j == 0 && i < 0 {
 				continue
 			}
