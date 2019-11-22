@@ -53,12 +53,11 @@ func main() {
 
 		seqs = SampleSequences(textData, model, Batch, Length)
 		model.EvaluateAll(seqs)
-		stepSize := seqtree.OptimalStep(seqtree.AllTimesteps(seqs...), tree, MaxStep, 30)
-		delta := seqtree.AvgLossDelta(seqtree.AllTimesteps(seqs...), tree, stepSize)
-		model.Add(tree, stepSize)
+		seqtree.ScaleOptimalStep(seqtree.AllTimesteps(seqs...), tree, MaxStep, 10, 30)
+		delta := seqtree.AvgLossDelta(seqtree.AllTimesteps(seqs...), tree, 1.0)
+		model.Add(tree, 1.0)
 
-		log.Printf("step %d: loss=%f step_size=%f loss_delta=%f",
-			i, loss/Batch, stepSize, -delta)
+		log.Printf("step %d: loss=%f loss_delta=%f", i, loss/Batch, -delta)
 		if i%10 == 0 {
 			GenerateSequence(model, Length)
 		}
