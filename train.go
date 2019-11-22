@@ -58,9 +58,7 @@ func OptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32, iters in
 		outputDeltas[i] = t.Evaluate(ts).OutputDelta
 	}
 
-	// Golden section search:
-	// https://en.wikipedia.org/wiki/Golden-section_search
-	lossForStep := func(stepSize float32) float32 {
+	return minimizeUnary(0, maxStep, iters, func(stepSize float32) float32 {
 		var lock sync.Mutex
 		var currentLoss float32
 
@@ -89,35 +87,7 @@ func OptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32, iters in
 		}
 		wg.Wait()
 		return currentLoss / float32(len(timesteps))
-	}
-
-	minStep := float32(0.0)
-	var midValue1, midValue2 *float32
-
-	for i := 0; i < iters; i++ {
-		mid1 := maxStep - (maxStep-minStep)/math.Phi
-		mid2 := minStep + (maxStep-minStep)/math.Phi
-		if midValue1 == nil {
-			x := lossForStep(mid1)
-			midValue1 = &x
-		}
-		if midValue2 == nil {
-			x := lossForStep(mid2)
-			midValue2 = &x
-		}
-
-		if *midValue2 < *midValue1 {
-			minStep = mid1
-			midValue1 = midValue2
-			midValue2 = nil
-		} else {
-			maxStep = mid2
-			midValue2 = midValue1
-			midValue1 = nil
-		}
-	}
-
-	return (minStep + maxStep) / 2
+	})
 }
 
 // PropagateLosses computes the gradients for every
@@ -545,32 +515,4 @@ func (b *Builder) featureSplitQuality(falses, trues []*TimestepSample, falseSum,
 		vectorNormSquared(trueSum)*sampleFrac/float32(essentials.MaxInt(1, len(trues)))
 
 	return newQuality - oldQuality
-}
-
-func vectorNormSquared(v []float32) float32 {
-	var res float32
-	for _, x := range v {
-		res += x * x
-	}
-	return res
-}
-
-func gradientSum(ts []*TimestepSample, dim int) []float32 {
-	if dim == 0 {
-		dim = len(ts[0].Timestep().Gradient)
-	}
-	sum := newKahanSum(dim)
-	for _, t := range ts {
-		sum.Add(t.Timestep().Gradient)
-	}
-	return sum.Sum()
-}
-
-func gradientMean(ts []*TimestepSample) []float32 {
-	sum := gradientSum(ts, 0)
-	scale := 1 / float32(len(ts))
-	for i := range sum {
-		sum[i] *= scale
-	}
-	return sum
 }
