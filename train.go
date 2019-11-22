@@ -9,47 +9,6 @@ import (
 	"github.com/unixpickle/essentials"
 )
 
-// BoundedStep computes a step size that ensures that the
-// update KL divergence is less than maxKL and that the
-// resulting loss improves.
-func BoundedStep(timesteps []*TimestepSample, t *Tree, maxKL, maxStep float32) float32 {
-	for i := 0; i < 64; i++ {
-		var lock sync.Mutex
-		var wg sync.WaitGroup
-		var currentKL float32
-		var currentDelta float32
-
-		numProcs := runtime.GOMAXPROCS(0)
-		for i := 0; i < numProcs; i++ {
-			wg.Add(1)
-			go func(i int) {
-				defer wg.Done()
-				var klTotal, deltaTotal float32
-				for j, ts := range timesteps {
-					if j%numProcs != i {
-						continue
-					}
-					leaf := t.Evaluate(ts)
-					klTotal += SoftmaxLossKL(ts.Timestep().Output, leaf.OutputDelta, -maxStep)
-					deltaTotal += SoftmaxLossDelta(ts.Timestep().Output, ts.Timestep().Target,
-						leaf.OutputDelta, -maxStep)
-				}
-				lock.Lock()
-				currentKL += klTotal
-				currentDelta += deltaTotal
-				lock.Unlock()
-			}(i)
-		}
-		wg.Wait()
-		currentKL /= float32(len(timesteps))
-		if currentKL <= maxKL && currentDelta < 0 {
-			return maxStep
-		}
-		maxStep *= 0.8
-	}
-	return 0
-}
-
 // OptimalStep performs a line search to find a step size
 // that minimizes the loss.
 func OptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32, iters int) float32 {
