@@ -22,6 +22,17 @@ func SampleSoftmax(outputs []float32) int {
 // SoftmaxLoss computes the loss function given output
 // logits and target probabilities.
 func SoftmaxLoss(outputs, targets []float32) float32 {
+	if len(outputs) == 2 {
+		// Fast case with one fewer exponential.
+		var normer float32
+		if outputs[0] > outputs[1] {
+			normer = outputs[0] + float32(math.Log(1+math.Exp(float64(outputs[1]-outputs[0]))))
+		} else {
+			normer = outputs[1] + float32(math.Log(1+math.Exp(float64(outputs[0]-outputs[1]))))
+		}
+		return targets[0]*(normer-outputs[0]) + targets[1]*(normer-outputs[1])
+	}
+
 	// Code duplication from logSoftmax() prevents
 	// allocations and can speedup computation
 	// significantly.
