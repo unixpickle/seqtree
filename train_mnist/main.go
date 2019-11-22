@@ -78,14 +78,12 @@ func main() {
 		seqs = SampleSequences(dataset, model, Batch)
 		model.EvaluateAll(seqs)
 
-		stepSize := seqtree.OptimalStep(seqtree.AllTimesteps(seqs...), tree, MaxStep, 20)
-		delta := seqtree.AvgLossDelta(seqtree.AllTimesteps(seqs...), tree, stepSize)
-		if stepSize > 0 {
-			model.Add(tree, stepSize)
-		}
+		seqtree.ScaleOptimalStep(seqtree.AllTimesteps(seqs...), tree, MaxStep, 10, 20)
+		delta := seqtree.AvgLossDelta(seqtree.AllTimesteps(seqs...), tree, 1.0)
+		model.Add(tree, 1.0)
 
-		log.Printf("step %d: loss=%f step_size=%f loss_delta=%f min_leaf=%d",
-			i, totalLoss, stepSize, -delta, builder.MinSplitSamples)
+		log.Printf("step %d: loss=%f loss_delta=%f min_leaf=%d",
+			i, totalLoss, -delta, builder.MinSplitSamples)
 
 		GenerateSequence(model)
 		model.Save("model.json")

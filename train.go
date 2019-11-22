@@ -45,8 +45,61 @@ func OptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32, iters in
 			}(i)
 		}
 		wg.Wait()
-		return currentLoss / float32(len(timesteps))
+		return currentLoss
 	})
+}
+
+// ScaleOptimalStep scales the leaves of t individually to
+// minimize the loss when a step of size 1 is taken.
+//
+// The maxStep argument is the maximum scaling for a leaf.
+// The minLeafSamples argument is the minimum number of
+// representative samples a leaf must have in order to be
+// scaled.
+func ScaleOptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32,
+	minLeafSamples, iters int) {
+	leafToSample := map[*Leaf][]*Timestep{}
+	for _, ts := range timesteps {
+		leaf := t.Evaluate(ts)
+		leafToSample[leaf] = append(leafToSample[leaf], ts.Timestep())
+	}
+	for leaf, samples := range leafToSample {
+		if len(samples) < minLeafSamples || len(samples) == 0 {
+			continue
+		}
+		scale := minimizeUnary(0, maxStep, iters, func(stepSize float32) float32 {
+			var lock sync.Mutex
+			var currentLoss float32
+
+			var wg sync.WaitGroup
+			numProcs := runtime.GOMAXPROCS(0)
+			for i := 0; i < numProcs; i++ {
+				wg.Add(1)
+				go func(i int) {
+					defer wg.Done()
+					total := newKahanSum(1)
+					tmpAddition := []float32{0.0}
+					tmpOutput := make([]float32, len(samples[0].Output))
+					for j := i; j < len(samples); j += numProcs {
+						sample := samples[j]
+						for k, x := range sample.Output {
+							tmpOutput[k] = x - stepSize*leaf.OutputDelta[k]
+						}
+						tmpAddition[0] = SoftmaxLoss(tmpOutput, sample.Target)
+						total.Add(tmpAddition)
+					}
+					lock.Lock()
+					currentLoss += total.Sum()[0]
+					lock.Unlock()
+				}(i)
+			}
+			wg.Wait()
+			return currentLoss
+		})
+		for i, x := range leaf.OutputDelta {
+			leaf.OutputDelta[i] = x * scale
+		}
+	}
 }
 
 // PropagateLosses computes the gradients for every
