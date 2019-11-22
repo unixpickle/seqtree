@@ -1,6 +1,7 @@
 package seqtree
 
 import (
+	"log"
 	"math"
 	"math/rand"
 	"runtime"
@@ -333,12 +334,14 @@ func (b *Builder) buildSubtree(union BranchFeatureUnion, falses, trues []*Timest
 // to move samples from falses into trues.
 func (b *Builder) optimalFeature(falses, trues []*TimestepSample,
 	features []BranchFeature) *BranchFeature {
+	log.Println("finding optimal feature")
+	defer log.Println("done finding optimal feature")
 	falseSum := gradientSum(falses, 0)
 	trueSum := gradientSum(trues, len(falseSum))
 
 	if b.CandidateSplits <= 1 {
 		for _, feature := range features {
-			quality := b.featureSplitQuality(falses, trues, falseSum, trueSum, feature, 1.0)
+			quality := b.slowFeatureSplitQuality(falses, trues, falseSum, trueSum, feature, 1.0)
 			if quality > 0 {
 				return &feature
 			}
@@ -359,7 +362,7 @@ func (b *Builder) optimalFeature(falses, trues []*TimestepSample,
 		go func() {
 			defer wg.Done()
 			for feature := range featureChan {
-				quality := b.featureSplitQuality(falses, trues, falseSum, trueSum, feature, 1.0)
+				quality := b.slowFeatureSplitQuality(falses, trues, falseSum, trueSum, feature, 1.0)
 				if quality <= 0 {
 					continue
 				}
@@ -527,4 +530,42 @@ func (b *Builder) featureSplitQuality(falses, trues []*TimestepSample, falseSum,
 		vectorNormSquared(trueSum)*sampleFrac/float32(essentials.MaxInt(1, len(trues)))
 
 	return newQuality - oldQuality
+}
+
+func (b *Builder) slowFeatureSplitQuality(falses, trues []*TimestepSample,
+	falseSum, trueSum []float32, f BranchFeature, sampleFrac float32) float32 {
+	var newFalses []*TimestepSample
+	newTrues := append([]*TimestepSample{}, trues...)
+	for _, t := range falses {
+		val := t.BranchFeature(f)
+		if val {
+			newTrues = append(newTrues, t)
+		} else {
+			newFalses = append(newFalses, t)
+		}
+	}
+	if len(newTrues) < b.MinSplitSamples || len(newFalses) < b.MinSplitSamples ||
+		len(newFalses) == 0 || len(newTrues) == 0 {
+		return 0
+	}
+	return lossDeltaForOptimalStep(newFalses, f) + lossDeltaForOptimalStep(newTrues, f)
+}
+
+func lossDeltaForOptimalStep(samples []*TimestepSample, f BranchFeature) float32 {
+	direction := gradientMean(samples)
+	lossForStep := func(step float32) float32 {
+		total := newKahanSum(1)
+		tmpAddition := []float32{0.0}
+		tmpOutput := make([]float32, len(samples[0].Timestep().Output))
+		for _, sample := range samples {
+			for i, x := range sample.Timestep().Output {
+				tmpOutput[i] = x - step*direction[i]
+			}
+			tmpAddition[0] = SoftmaxLoss(tmpOutput, sample.Timestep().Target)
+			total.Add(tmpAddition)
+		}
+		return total.Sum()[0]
+	}
+	step := minimizeUnary(0, 40, 20, lossForStep)
+	return lossForStep(0) - lossForStep(step)
 }
