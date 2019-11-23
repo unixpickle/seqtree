@@ -56,6 +56,7 @@ func main() {
 		MaxSplitSamples: MaxSplitSamples,
 		MaxUnion:        MaxUnion,
 		CandidateSplits: CandidateSplits,
+		HigherOrder:     true,
 	}
 
 	for i := 0; true; i++ {

@@ -441,7 +441,7 @@ func (b *Builder) computeOutputDelta(samples []lossSample) []float32 {
 
 	if b.HigherOrder {
 		x := b.minimizePolynomial(polynomial(res))
-		return []float32{-x / 2, x / 2}
+		return []float32{-x, x}
 	}
 
 	for i, x := range res {
