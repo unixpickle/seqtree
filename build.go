@@ -61,6 +61,15 @@ type Builder struct {
 	// Specifying this can prevent slowdowns as more and
 	// more features are added to the model.
 	ExtraFeatures int
+
+	// HigherOrder, if true, indicates that a higher-order
+	// approximation of the loss function should be used
+	// to choose optimal splits.
+	//
+	// This is currently only supported for binary
+	// classification problems (i.e. problems with two
+	// outputs).
+	HigherOrder bool
 }
 
 // Build builds a tree greedily using all of the provided
@@ -70,7 +79,11 @@ func (b *Builder) Build(samples []*TimestepSample) *Tree {
 	if len(samples) == 0 {
 		panic("no data")
 	}
-	numFeatures := samples[0].Timestep().Features.Len()
+	ts := samples[0].Timestep()
+	if b.HigherOrder && len(ts.Output) != 2 {
+		panic("higher order optimization only supported for binary outputs")
+	}
+	numFeatures := ts.Features.Len()
 	data := b.computeLossSamples(samples)
 	return b.build(data, b.Depth, numFeatures)
 }
@@ -367,10 +380,17 @@ func (b *Builder) featureSplitQuality(falses, trues []lossSample, sums *lossSums
 
 func (b *Builder) computeSplitQuality(falses, trues []float32,
 	falseCount, trueCount float32) float32 {
+	if b.HigherOrder {
+		poly1 := polynomial(falses)
+		min1 := b.minimizePolynomial(poly1)
+		poly2 := polynomial(trues)
+		min2 := b.minimizePolynomial(poly2)
+		return -(poly1.Evaluate(min1) + poly2.Evaluate(min2))
+	}
 	if trueCount == 0 {
 		trueCount = 1
 	} else if falseCount == 0 {
-		falseCount = 0
+		falseCount = 1
 	}
 	return vectorNormSquared(falses)/falseCount + vectorNormSquared(trues)/trueCount
 }
@@ -387,9 +407,23 @@ func (b *Builder) computeLossSamples(samples []*TimestepSample) []lossSample {
 			for j := i; j < len(samples); j += numProcs {
 				sample := samples[j]
 				ts := sample.Timestep()
-				grad := SoftmaxLossGrad(ts.Output, ts.Target)
 				res[j].TimestepSample = *sample
-				res[j].Vector = grad
+				if b.HigherOrder {
+					poly := newPolynomialLogSigmoid(ts.Output[0] - ts.Output[1])
+					poly1 := newPolynomialLogSigmoid(ts.Output[1] - ts.Output[0])
+					for i, x := range poly {
+						poly[i] = -x * ts.Target[0]
+						if i%2 == 1 {
+							poly[i] += poly1[i] * ts.Target[1]
+						} else {
+							poly[i] -= poly1[i] * ts.Target[1]
+						}
+					}
+					res[j].Vector = poly
+				} else {
+					grad := SoftmaxLossGrad(ts.Output, ts.Target)
+					res[j].Vector = grad
+				}
 			}
 		}(i)
 	}
@@ -404,10 +438,20 @@ func (b *Builder) computeOutputDelta(samples []lossSample) []float32 {
 		sum.Add(s.Vector)
 	}
 	res := sum.Sum()
+
+	if b.HigherOrder {
+		x := b.minimizePolynomial(polynomial(res))
+		return []float32{-x / 2, x / 2}
+	}
+
 	for i, x := range res {
 		res[i] = x / float32(len(samples))
 	}
 	return res
+}
+
+func (b *Builder) minimizePolynomial(p polynomial) float32 {
+	return minimizeUnary(-1, 1, 20, p.Evaluate)
 }
 
 type lossSample struct {
