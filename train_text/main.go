@@ -41,7 +41,6 @@ func main() {
 	for i := 0; true; i++ {
 		seqs := SampleSequences(textData, model, Batch, Length)
 		model.EvaluateAll(seqs)
-		seqtree.PropagateLosses(seqs)
 
 		var loss float32
 		for _, seq := range seqs {
@@ -49,12 +48,12 @@ func main() {
 		}
 
 		builder.ExtraFeatures = model.ExtraFeatures
-		tree := builder.Build(seqtree.AllTimesteps(seqs...))
+		tree := builder.Build(seqtree.TimestepSamples(seqs))
 
 		seqs = SampleSequences(textData, model, Batch, Length)
 		model.EvaluateAll(seqs)
-		seqtree.ScaleOptimalStep(seqtree.AllTimesteps(seqs...), tree, MaxStep, 10, 30)
-		delta := seqtree.AvgLossDelta(seqtree.AllTimesteps(seqs...), tree, 1.0)
+		seqtree.ScaleOptimalStep(seqtree.TimestepSamples(seqs), tree, MaxStep, 10, 30)
+		delta := seqtree.AvgLossDelta(seqtree.TimestepSamples(seqs), tree, 1.0)
 		model.Add(tree, 1.0)
 
 		log.Printf("step %d: loss=%f loss_delta=%f", i, loss/Batch, -delta)

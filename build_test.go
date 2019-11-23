@@ -13,7 +13,7 @@ func generateTestModel(baseFeatures int) *Model {
 			MinSplitSamples: 10,
 			Horizons:        []int{0, 1, 2},
 		}
-		t := b.Build(AllTimesteps(generateTestSequences(m)...))
+		t := b.Build(TimestepSamples(generateTestSequences(m)))
 		m.Add(t, 0.1)
 	}
 	return m
@@ -29,7 +29,6 @@ func generateTestSequences(m *Model) []Sequence {
 		res = append(res, MakeOneHotSequence(seq, m.BaseFeatures, m.NumFeatures()))
 	}
 	m.EvaluateAll(res)
-	PropagateLosses(res)
 	return res
 }
 
@@ -40,10 +39,9 @@ func BenchmarkBuildTreeDense(b *testing.B) {
 	}
 	m := &Model{BaseFeatures: 2}
 	seq := MakeOneHotSequence(seqInts, 2, m.NumFeatures())
-	PropagateLosses([]Sequence{seq})
 	builder := Builder{Depth: 3, Horizons: []int{0, 1, 2, 28, 29, 30, 56, 57, 58}}
 	b.ResetTimer()
 	for i := 0; i <= b.N; i++ {
-		builder.Build(AllTimesteps(seq))
+		builder.Build(TimestepSamples([]Sequence{seq}))
 	}
 }

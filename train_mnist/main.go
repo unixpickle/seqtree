@@ -61,7 +61,6 @@ func main() {
 	for i := 0; true; i++ {
 		seqs := SampleSequences(dataset, model, Batch)
 		model.EvaluateAll(seqs)
-		seqtree.PropagateLosses(seqs)
 
 		totalLoss := float32(0)
 		for _, seq := range seqs {
@@ -72,14 +71,14 @@ func main() {
 		builder.MinSplitSamples = rand.Intn(MinSplitSamplesMax-MinSplitSamplesMin) +
 			MinSplitSamplesMin
 		builder.ExtraFeatures = model.ExtraFeatures
-		tree := builder.Build(seqtree.AllTimesteps(seqs...))
+		tree := builder.Build(seqtree.TimestepSamples(seqs))
 
 		// Optimize step size on a different batch.
 		seqs = SampleSequences(dataset, model, Batch)
 		model.EvaluateAll(seqs)
 
-		seqtree.ScaleOptimalStep(seqtree.AllTimesteps(seqs...), tree, MaxStep, 10, 20)
-		delta := seqtree.AvgLossDelta(seqtree.AllTimesteps(seqs...), tree, 1.0)
+		seqtree.ScaleOptimalStep(seqtree.TimestepSamples(seqs), tree, MaxStep, 10, 20)
+		delta := seqtree.AvgLossDelta(seqtree.TimestepSamples(seqs), tree, 1.0)
 		model.Add(tree, 1.0)
 
 		log.Printf("step %d: loss=%f loss_delta=%f min_leaf=%d",

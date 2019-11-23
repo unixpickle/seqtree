@@ -18,7 +18,7 @@ func TestOptimalStep(t *testing.T) {
 					MinSplitSamples: 10,
 					Horizons:        []int{0, 1, 2},
 				}
-				ts := AllTimesteps(generateTestSequences(m)...)
+				ts := TimestepSamples(generateTestSequences(m))
 				tree := b.Build(ts)
 
 				actual := OptimalStep(ts, tree, 40.0, 100)
@@ -51,7 +51,7 @@ func BenchmarkOptimalStep(b *testing.B) {
 					MinSplitSamples: 10,
 					Horizons:        []int{0, 1, 2},
 				}
-				ts := AllTimesteps(generateTestSequences(m)...)
+				ts := TimestepSamples(generateTestSequences(m))
 				tree := builder.Build(ts)
 				b.StartTimer()
 

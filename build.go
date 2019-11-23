@@ -71,7 +71,8 @@ func (b *Builder) Build(samples []*TimestepSample) *Tree {
 		panic("no data")
 	}
 	numFeatures := samples[0].Timestep().Features.Len()
-	return b.build(samples, b.Depth, numFeatures)
+	data := b.computeLossSamples(samples)
+	return b.build(data, b.Depth, numFeatures)
 }
 
 // build recursively creates a tree that splits up the
@@ -80,11 +81,11 @@ func (b *Builder) Build(samples []*TimestepSample) *Tree {
 // The nextNewFeature argument specifies the current
 // number of features, so that new leaves can be assigned
 // unused feature numbers.
-func (b *Builder) build(samples []*TimestepSample, depth, nextNewFeature int) *Tree {
+func (b *Builder) build(samples []lossSample, depth, nextNewFeature int) *Tree {
 	if depth == 0 || len(samples) <= b.MinSplitSamples {
 		return &Tree{
 			Leaf: &Leaf{
-				OutputDelta: gradientMean(samples),
+				OutputDelta: b.computeOutputDelta(samples),
 				Feature:     nextNewFeature,
 			},
 		}
@@ -103,7 +104,7 @@ func (b *Builder) build(samples []*TimestepSample, depth, nextNewFeature int) *T
 //
 // This function may modify the trues slice, but not the
 // falses slice.
-func (b *Builder) buildUnion(union BranchFeatureUnion, falses, trues []*TimestepSample, depth,
+func (b *Builder) buildUnion(union BranchFeatureUnion, falses, trues []lossSample, depth,
 	nextNewFeature int) *Tree {
 	if len(union) > 0 && len(union) >= b.MaxUnion {
 		return b.buildSubtree(union, falses, trues, depth, nextNewFeature)
@@ -111,7 +112,7 @@ func (b *Builder) buildUnion(union BranchFeatureUnion, falses, trues []*Timestep
 
 	splitSamples := falses
 	if b.MaxSplitSamples != 0 && len(splitSamples) > b.MaxSplitSamples {
-		splitSamples = make([]*TimestepSample, b.MaxSplitSamples)
+		splitSamples = make([]lossSample, b.MaxSplitSamples)
 		for i, j := range rand.Perm(len(splitSamples))[:b.MaxSplitSamples] {
 			splitSamples[i] = falses[j]
 		}
@@ -133,7 +134,7 @@ func (b *Builder) buildUnion(union BranchFeatureUnion, falses, trues []*Timestep
 		return b.buildSubtree(union, falses, trues, depth, nextNewFeature)
 	}
 
-	var newFalses []*TimestepSample
+	var newFalses []lossSample
 	for _, sample := range falses {
 		if sample.BranchFeature(*bestFeature) {
 			trues = append(trues, sample)
@@ -147,7 +148,7 @@ func (b *Builder) buildUnion(union BranchFeatureUnion, falses, trues []*Timestep
 
 // buildSubtree creates the branches (or leaf) node for
 // the given union and its resulting split.
-func (b *Builder) buildSubtree(union BranchFeatureUnion, falses, trues []*TimestepSample,
+func (b *Builder) buildSubtree(union BranchFeatureUnion, falses, trues []lossSample,
 	depth, nextNewFeature int) *Tree {
 	if len(union) == 0 {
 		return b.build(falses, 0, nextNewFeature)
@@ -170,14 +171,13 @@ func (b *Builder) buildSubtree(union BranchFeatureUnion, falses, trues []*Timest
 // The current split is indicated by falses and trues.
 // It is assumed that the newly selected feature will act
 // to move samples from falses into trues.
-func (b *Builder) optimalFeature(falses, trues []*TimestepSample,
+func (b *Builder) optimalFeature(falses, trues []lossSample,
 	features []BranchFeature) *BranchFeature {
-	falseSum := gradientSum(falses, 0)
-	trueSum := gradientSum(trues, len(falseSum))
+	sums := newLossSums(falses, trues)
 
 	if b.CandidateSplits <= 1 {
 		for _, feature := range features {
-			quality := b.featureSplitQuality(falses, trues, falseSum, trueSum, feature, 1.0)
+			quality := b.featureSplitQuality(falses, trues, sums, feature, 1.0)
 			if quality > 0 {
 				return &feature
 			}
@@ -198,7 +198,7 @@ func (b *Builder) optimalFeature(falses, trues []*TimestepSample,
 		go func() {
 			defer wg.Done()
 			for feature := range featureChan {
-				quality := b.featureSplitQuality(falses, trues, falseSum, trueSum, feature, 1.0)
+				quality := b.featureSplitQuality(falses, trues, sums, feature, 1.0)
 				if quality <= 0 {
 					continue
 				}
@@ -249,14 +249,12 @@ func (b *Builder) optimalFeature(falses, trues []*TimestepSample,
 // the fraction of the original falses slice that was
 // passed.
 // The trues argument is never a subset.
-func (b *Builder) sortFeatures(falses, trues []*TimestepSample,
-	sampleFrac float32) []BranchFeature {
+func (b *Builder) sortFeatures(falses, trues []lossSample, sampleFrac float32) []BranchFeature {
 	if len(falses) == 0 {
 		panic("no data")
 	}
 	numFeatures := falses[0].Timestep().Features.Len()
-	falseSum := gradientSum(falses, 0)
-	trueSum := gradientSum(trues, len(falseSum))
+	sums := newLossSums(falses, trues)
 
 	var resultLock sync.Mutex
 	var features []BranchFeature
@@ -269,7 +267,7 @@ func (b *Builder) sortFeatures(falses, trues []*TimestepSample,
 		go func() {
 			defer wg.Done()
 			for f := range featureChan {
-				quality := b.featureSplitQuality(falses, trues, falseSum, trueSum, f, sampleFrac)
+				quality := b.featureSplitQuality(falses, trues, sums, f, sampleFrac)
 				if quality > 0 {
 					resultLock.Lock()
 					features = append(features, f)
@@ -304,13 +302,9 @@ func (b *Builder) sortFeatures(falses, trues []*TimestepSample,
 // featureSplitQuality evaluates a given split.
 // The result is greater for better splits.
 //
-// The falseSum and trueSum arguments are the precomputed
-// gradient sums for falses and trues, respectively.
-// These sums are precomputed to improve performance.
-//
 // See sortFeatures() for details on sampleFrac.
-func (b *Builder) featureSplitQuality(falses, trues []*TimestepSample, falseSum, trueSum []float32,
-	f BranchFeature, sampleFrac float32) float32 {
+func (b *Builder) featureSplitQuality(falses, trues []lossSample, sums *lossSums, f BranchFeature,
+	sampleFrac float32) float32 {
 	splitFalseCount := 0
 	splitTrueCount := 0
 	featureValues := make([]bool, len(falses))
@@ -336,17 +330,17 @@ func (b *Builder) featureSplitQuality(falses, trues []*TimestepSample, falseSum,
 
 	trueIsMinority := splitTrueCount < splitFalseCount
 
-	minoritySum := make([]float32, len(falseSum))
+	minoritySum := make([]float32, len(sums.False))
 	for i, val := range featureValues {
 		if val == trueIsMinority {
-			for j, x := range falses[i].Timestep().Gradient {
+			for j, x := range falses[i].Vector {
 				minoritySum[j] += x
 			}
 		}
 	}
 
-	majoritySum := make([]float32, len(falseSum))
-	for i, x := range falseSum {
+	majoritySum := make([]float32, len(sums.False))
+	for i, x := range sums.False {
 		majoritySum[i] = x - minoritySum[i]
 	}
 
@@ -355,15 +349,90 @@ func (b *Builder) featureSplitQuality(falses, trues []*TimestepSample, falseSum,
 		newTrueSum, newFalseSum = majoritySum, minoritySum
 	}
 
-	for i, x := range trueSum {
+	oldTrueSum := make([]float32, len(newTrueSum))
+	for i, x := range sums.True {
 		newTrueSum[i] += x * sampleFrac
+		oldTrueSum[i] += x * sampleFrac
 	}
-	effectiveTrueCount := float32(splitTrueCount) + float32(len(trues))*sampleFrac
+	oldTrueCount := float32(len(trues)) * sampleFrac
+	effectiveTrueCount := float32(splitTrueCount) + oldTrueCount
 
-	newQuality := vectorNormSquared(newFalseSum)/float32(splitFalseCount) +
-		vectorNormSquared(newTrueSum)/effectiveTrueCount
-	oldQuality := vectorNormSquared(falseSum)/float32(len(falses)) +
-		vectorNormSquared(trueSum)*sampleFrac/float32(essentials.MaxInt(1, len(trues)))
+	newQuality := b.computeSplitQuality(newFalseSum, newTrueSum, float32(splitFalseCount),
+		effectiveTrueCount)
+	oldQuality := b.computeSplitQuality(sums.False, oldTrueSum, float32(len(falses)),
+		oldTrueCount)
 
 	return newQuality - oldQuality
+}
+
+func (b *Builder) computeSplitQuality(falses, trues []float32,
+	falseCount, trueCount float32) float32 {
+	if trueCount == 0 {
+		trueCount = 1
+	} else if falseCount == 0 {
+		falseCount = 0
+	}
+	return vectorNormSquared(falses)/falseCount + vectorNormSquared(trues)/trueCount
+}
+
+func (b *Builder) computeLossSamples(samples []*TimestepSample) []lossSample {
+	res := make([]lossSample, len(samples))
+
+	numProcs := runtime.GOMAXPROCS(0)
+	wg := sync.WaitGroup{}
+	for i := 0; i < numProcs; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			for j := i; j < len(samples); j += numProcs {
+				sample := samples[j]
+				ts := sample.Timestep()
+				grad := SoftmaxLossGrad(ts.Output, ts.Target)
+				res[j].TimestepSample = *sample
+				res[j].Vector = grad
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	return res
+}
+
+func (b *Builder) computeOutputDelta(samples []lossSample) []float32 {
+	sum := newKahanSum(len(samples[0].Vector))
+	for _, s := range samples {
+		sum.Add(s.Vector)
+	}
+	res := sum.Sum()
+	for i, x := range res {
+		res[i] = x / float32(len(samples))
+	}
+	return res
+}
+
+type lossSample struct {
+	TimestepSample
+
+	// Vector is some linear representation of the loss
+	// function for this sample.
+	// It may be a gradient, or a set of polynomial
+	// coefficients.
+	Vector []float32
+}
+
+type lossSums struct {
+	False []float32
+	True  []float32
+}
+
+func newLossSums(falses, trues []lossSample) *lossSums {
+	falseSum := newKahanSum(len(falses[0].Vector))
+	trueSum := newKahanSum(len(falseSum.Sum()))
+	for _, s := range falses {
+		falseSum.Add(s.Vector)
+	}
+	for _, s := range trues {
+		trueSum.Add(s.Vector)
+	}
+	return &lossSums{False: falseSum.Sum(), True: trueSum.Sum()}
 }

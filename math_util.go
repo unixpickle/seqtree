@@ -47,26 +47,6 @@ func vectorNormSquared(v []float32) float32 {
 	return res
 }
 
-func gradientSum(ts []*TimestepSample, dim int) []float32 {
-	if dim == 0 {
-		dim = len(ts[0].Timestep().Gradient)
-	}
-	sum := newKahanSum(dim)
-	for _, t := range ts {
-		sum.Add(t.Timestep().Gradient)
-	}
-	return sum.Sum()
-}
-
-func gradientMean(ts []*TimestepSample) []float32 {
-	sum := gradientSum(ts, 0)
-	scale := 1 / float32(len(ts))
-	for i := range sum {
-		sum[i] *= scale
-	}
-	return sum
-}
-
 type polynomial []float32
 
 // newPolynomialLogSigmoid approximates the log of the

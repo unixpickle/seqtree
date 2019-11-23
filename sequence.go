@@ -27,18 +27,6 @@ func MakeOneHotSequence(seq []int, outputSize, numFeatures int) Sequence {
 	return append(res, ts)
 }
 
-// AllTimesteps gets all of the timestep samples from all
-// of the sequences.
-func AllTimesteps(seqs ...Sequence) []*TimestepSample {
-	var res []*TimestepSample
-	for _, seq := range seqs {
-		for i := range seq {
-			res = append(res, &TimestepSample{Sequence: seq, Index: i})
-		}
-	}
-	return res
-}
-
 type Sequence []*Timestep
 
 // MeanLoss computes the mean loss for the sequence.
@@ -50,22 +38,6 @@ func (s Sequence) MeanLoss() float32 {
 	return total / float32(len(s))
 }
 
-// PropagateLoss computes the sets the Gradients for every
-// timestamp in the sequence.
-func (s Sequence) PropagateLoss() {
-	for _, t := range s {
-		t.Gradient = SoftmaxLossGrad(t.Output, t.Target)
-	}
-}
-
-// PropagateLossNatural is like PropagateLoss, but it uses
-// the natural gradient.
-func (s Sequence) PropagateLossNatural() {
-	for _, t := range s {
-		t.Gradient = SoftmaxLossNaturalGrad(t.Output, t.Target)
-	}
-}
-
 // Timestep represents a single timestep in a sequence.
 type Timestep struct {
 	// Features stores the current feature bitmap.
@@ -75,18 +47,27 @@ type Timestep struct {
 	// for this timestamp.
 	Output []float32
 
-	// The following two fields are used during training.
-	// The Target indicates the ground-truth label, and
-	// the Gradient indicates the gradient of the loss
-	// function with respect to the outputs.
-	Target   []float32
-	Gradient []float32
+	// Target is a vector of output probabilities
+	// representing the ground truth label.
+	Target []float32
 }
 
 // TimestepSample points to a timestep in a sequence.
 type TimestepSample struct {
 	Sequence Sequence
 	Index    int
+}
+
+// TimestepSamples gets all of the timestep samples from
+// all of the sequences.
+func TimestepSamples(seqs []Sequence) []*TimestepSample {
+	var res []*TimestepSample
+	for _, seq := range seqs {
+		for i := range seq {
+			res = append(res, &TimestepSample{Sequence: seq, Index: i})
+		}
+	}
+	return res
 }
 
 // BranchFeature computes the value of the feature, which

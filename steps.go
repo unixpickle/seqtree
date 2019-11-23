@@ -98,43 +98,6 @@ func ScaleOptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32,
 	}
 }
 
-// PropagateLosses computes the gradients for every
-// sequence and sets the timesteps' Gradient fields.
-func PropagateLosses(seqs []Sequence) {
-	propagateLosses(seqs, false)
-}
-
-// PropagateLossesNatural is like PropagateLosses, except
-// that it uses the natural gradient.
-func PropagateLossesNatural(seqs []Sequence) {
-	propagateLosses(seqs, true)
-}
-
-func propagateLosses(seqs []Sequence, natural bool) {
-	ch := make(chan Sequence, len(seqs))
-	for _, seq := range seqs {
-		ch <- seq
-	}
-	close(ch)
-
-	var wg sync.WaitGroup
-	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for seq := range ch {
-				if natural {
-					seq.PropagateLossNatural()
-				} else {
-					seq.PropagateLoss()
-				}
-			}
-		}()
-	}
-
-	wg.Wait()
-}
-
 // AvgLossDelta computes the average change in the loss
 // after taking a step.
 func AvgLossDelta(timesteps []*TimestepSample, t *Tree, currentStep float32) float32 {
