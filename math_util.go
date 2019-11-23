@@ -83,7 +83,7 @@ func newPolynomialLogSigmoid(x float32) polynomial {
 	expP7 := expP4 * expP3
 	expP8 := expP4 * expP4
 
-	return polynomial{
+	res := polynomial{
 		logValue,
 		1 / (exp + 1),
 		-1.0 / 2.0 * exp / expP2,
@@ -94,6 +94,15 @@ func newPolynomialLogSigmoid(x float32) polynomial {
 		1.0 / 5040.0 * exp * (57*exp - 302*exp2 + 302*exp3 - 57*exp4 + exp5 - 1) / expP7,
 		-1.0 / 40320.0 * exp * (-120*exp + 1191*exp2 - 2416*exp3 + 1191*exp4 - 120*exp5 + exp6 + 1) / expP8,
 	}
+	for i, x := range res {
+		if math.IsNaN(float64(x)) {
+			// Usually this is infinity/infinity,
+			// which ends up being zero because the top
+			// term is O(x^n) and the bottom term is O(x^(n+2)).
+			res[i] = 0
+		}
+	}
+	return res
 }
 
 func (p polynomial) Evaluate(x float32) float32 {
