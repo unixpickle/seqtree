@@ -104,6 +104,30 @@ func SoftmaxLossNaturalGrad(outputs, targets []float32) []float32 {
 	return naturalGrad
 }
 
+// SoftmaxLossHessian computes the Hessian matrix for the
+// softmax loss function.
+func SoftmaxLossHessian(outputs, targets []float32) *SquareMatrix {
+	// TODO: use an exact formula here instead of finite
+	// differences.
+	const Epsilon = 1e-4
+	result := &SquareMatrix{
+		Dim:  len(outputs),
+		Data: make([]float32, 0, len(outputs)*len(outputs)),
+	}
+	newOutputs := append([]float32{}, outputs...)
+	for i, x := range outputs {
+		newOutputs[i] = x - Epsilon
+		grad1 := SoftmaxLossGrad(newOutputs, targets)
+		newOutputs[i] = x + Epsilon
+		grad2 := SoftmaxLossGrad(newOutputs, targets)
+		newOutputs[i] = x
+		for i, g1 := range grad1 {
+			result.Data = append(result.Data, (grad2[i]-g1)/(Epsilon*2))
+		}
+	}
+	return result
+}
+
 // SoftmaxLossKL computes
 //
 //     KL(softmax(outputs+deltas*stepSize)||softmax(outputs))

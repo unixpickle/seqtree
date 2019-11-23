@@ -22,7 +22,7 @@ const (
 	HorizontalReceptiveField = 5
 	VerticalReceptiveField   = 9
 
-	Batch    = 4000
+	Batch    = 1000
 	Depth    = 4
 	MaxUnion = 3
 	MaxStep  = 20.0
@@ -62,6 +62,7 @@ func main() {
 		seqs := SampleSequences(dataset, model, Batch)
 		model.EvaluateAll(seqs)
 		seqtree.PropagateLosses(seqs)
+		seqtree.PropagateHessians(seqs)
 
 		totalLoss := float32(0)
 		for _, seq := range seqs {

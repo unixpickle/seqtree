@@ -47,22 +47,42 @@ func vectorNormSquared(v []float32) float32 {
 	return res
 }
 
-func gradientSum(ts []*TimestepSample, dim int) []float32 {
-	if dim == 0 {
-		dim = len(ts[0].Timestep().Gradient)
-	}
-	sum := newKahanSum(dim)
-	for _, t := range ts {
-		sum.Add(t.Timestep().Gradient)
-	}
-	return sum.Sum()
+type SquareMatrix struct {
+	Dim  int
+	Data []float32
 }
 
-func gradientMean(ts []*TimestepSample) []float32 {
-	sum := gradientSum(ts, 0)
-	scale := 1 / float32(len(ts))
-	for i := range sum {
-		sum[i] *= scale
+func (s *SquareMatrix) Inverse() *SquareMatrix {
+	if s.Dim == 1 {
+		return &SquareMatrix{
+			Dim:  s.Dim,
+			Data: []float32{1 / s.Data[0]},
+		}
+	} else if s.Dim == 2 {
+		scale := 1 / (s.Data[0]*s.Data[3] - s.Data[1]*s.Data[2])
+		return &SquareMatrix{
+			Dim: s.Dim,
+			Data: []float32{
+				scale * s.Data[3],
+				-scale * s.Data[1],
+				-scale * s.Data[2],
+				scale * s.Data[0],
+			},
+		}
 	}
-	return sum
+	panic("inverse not implemented for larger matrices")
+}
+
+func (s *SquareMatrix) VectorProduct(v []float32) []float32 {
+	if len(v) != s.Dim {
+		panic("dimension mismatch")
+	}
+	res := make([]float32, len(v))
+	for row := 0; row < s.Dim; row++ {
+		start := row * s.Dim
+		for i, x := range v {
+			res[row] += x * s.Data[start+i]
+		}
+	}
+	return res
 }

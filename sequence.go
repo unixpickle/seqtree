@@ -50,11 +50,19 @@ func (s Sequence) MeanLoss() float32 {
 	return total / float32(len(s))
 }
 
-// PropagateLoss computes the sets the Gradients for every
+// PropagateLoss computes and sets the Gradients for every
 // timestamp in the sequence.
 func (s Sequence) PropagateLoss() {
 	for _, t := range s {
 		t.Gradient = SoftmaxLossGrad(t.Output, t.Target)
+	}
+}
+
+// PropagateHessian computes and sets the Hessians for
+// every timestamp in the sequence.
+func (s Sequence) PropagateHessian() {
+	for _, t := range s {
+		t.Hessian = SoftmaxLossHessian(t.Output, t.Target)
 	}
 }
 
@@ -79,8 +87,15 @@ type Timestep struct {
 	// The Target indicates the ground-truth label, and
 	// the Gradient indicates the gradient of the loss
 	// function with respect to the outputs.
+	// The Hessian, if set, is the matrix of second-order
+	// derivatives used for a more accurate splitting
+	// criterion.
+	// It is not recommended to use the Hessian if the
+	// outputs have more than two dimensions, as it adds
+	// significant overhead.
 	Target   []float32
 	Gradient []float32
+	Hessian  *SquareMatrix
 }
 
 // TimestepSample points to a timestep in a sequence.

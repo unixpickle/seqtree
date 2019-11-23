@@ -1,7 +1,6 @@
 package seqtree
 
 import (
-	"log"
 	"math"
 	"math/rand"
 	"runtime"
@@ -106,16 +105,22 @@ func ScaleOptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32,
 // PropagateLosses computes the gradients for every
 // sequence and sets the timesteps' Gradient fields.
 func PropagateLosses(seqs []Sequence) {
-	propagateLosses(seqs, false)
+	propagateLosses(seqs, false, false)
 }
 
 // PropagateLossesNatural is like PropagateLosses, except
 // that it uses the natural gradient.
 func PropagateLossesNatural(seqs []Sequence) {
-	propagateLosses(seqs, true)
+	propagateLosses(seqs, true, false)
 }
 
-func propagateLosses(seqs []Sequence, natural bool) {
+// PropagateHessians computes the hessians for every
+// sequence and sets the timesteps' Hessian fields.
+func PropagateHessians(seqs []Sequence) {
+	propagateLosses(seqs, false, true)
+}
+
+func propagateLosses(seqs []Sequence, natural, hessian bool) {
 	ch := make(chan Sequence, len(seqs))
 	for _, seq := range seqs {
 		ch <- seq
@@ -130,6 +135,8 @@ func propagateLosses(seqs []Sequence, natural bool) {
 			for seq := range ch {
 				if natural {
 					seq.PropagateLossNatural()
+				} else if hessian {
+					seq.PropagateHessian()
 				} else {
 					seq.PropagateLoss()
 				}
@@ -334,14 +341,11 @@ func (b *Builder) buildSubtree(union BranchFeatureUnion, falses, trues []*Timest
 // to move samples from falses into trues.
 func (b *Builder) optimalFeature(falses, trues []*TimestepSample,
 	features []BranchFeature) *BranchFeature {
-	log.Println("finding optimal feature")
-	defer log.Println("done finding optimal feature")
-	falseSum := gradientSum(falses, 0)
-	trueSum := gradientSum(trues, len(falseSum))
+	sums := newGradientSums(falses, trues)
 
 	if b.CandidateSplits <= 1 {
 		for _, feature := range features {
-			quality := b.slowFeatureSplitQuality(falses, trues, falseSum, trueSum, feature, 1.0)
+			quality := b.featureSplitQuality(falses, trues, sums, feature, 1.0)
 			if quality > 0 {
 				return &feature
 			}
@@ -362,7 +366,7 @@ func (b *Builder) optimalFeature(falses, trues []*TimestepSample,
 		go func() {
 			defer wg.Done()
 			for feature := range featureChan {
-				quality := b.slowFeatureSplitQuality(falses, trues, falseSum, trueSum, feature, 1.0)
+				quality := b.featureSplitQuality(falses, trues, sums, feature, 1.0)
 				if quality <= 0 {
 					continue
 				}
@@ -419,8 +423,7 @@ func (b *Builder) sortFeatures(falses, trues []*TimestepSample,
 		panic("no data")
 	}
 	numFeatures := falses[0].Timestep().Features.Len()
-	falseSum := gradientSum(falses, 0)
-	trueSum := gradientSum(trues, len(falseSum))
+	sums := newGradientSums(falses, trues)
 
 	var resultLock sync.Mutex
 	var features []BranchFeature
@@ -433,7 +436,7 @@ func (b *Builder) sortFeatures(falses, trues []*TimestepSample,
 		go func() {
 			defer wg.Done()
 			for f := range featureChan {
-				quality := b.featureSplitQuality(falses, trues, falseSum, trueSum, f, sampleFrac)
+				quality := b.featureSplitQuality(falses, trues, sums, f, sampleFrac)
 				if quality > 0 {
 					resultLock.Lock()
 					features = append(features, f)
@@ -473,7 +476,7 @@ func (b *Builder) sortFeatures(falses, trues []*TimestepSample,
 // These sums are precomputed to improve performance.
 //
 // See sortFeatures() for details on sampleFrac.
-func (b *Builder) featureSplitQuality(falses, trues []*TimestepSample, falseSum, trueSum []float32,
+func (b *Builder) featureSplitQuality(falses, trues []*TimestepSample, sums *gradientSums,
 	f BranchFeature, sampleFrac float32) float32 {
 	splitFalseCount := 0
 	splitTrueCount := 0
@@ -500,72 +503,105 @@ func (b *Builder) featureSplitQuality(falses, trues []*TimestepSample, falseSum,
 
 	trueIsMinority := splitTrueCount < splitFalseCount
 
-	minoritySum := make([]float32, len(falseSum))
+	minoritySum := newKahanSum(len(sums.False))
+	minorityHessianSum := newKahanSum(len(sums.FalseHessian))
 	for i, val := range featureValues {
 		if val == trueIsMinority {
-			for j, x := range falses[i].Timestep().Gradient {
-				minoritySum[j] += x
-			}
+			minoritySum.Add(falses[i].Timestep().Gradient)
+			minorityHessianSum.Add(falses[i].Timestep().Hessian.Data)
 		}
 	}
 
-	majoritySum := make([]float32, len(falseSum))
-	for i, x := range falseSum {
-		majoritySum[i] = x - minoritySum[i]
+	majoritySum := make([]float32, len(sums.False))
+	majorityHessianSum := make([]float32, len(sums.FalseHessian))
+	for i, x := range sums.False {
+		majoritySum[i] = x - minoritySum.Sum()[i]
+	}
+	for i, x := range sums.FalseHessian {
+		majorityHessianSum[i] = x - minorityHessianSum.Sum()[i]
 	}
 
-	newTrueSum, newFalseSum := minoritySum, majoritySum
+	newTrueSum, newFalseSum := minoritySum.Sum(), majoritySum
+	newTrueHessianSum, newFalseHessianSum := minorityHessianSum.Sum(), majorityHessianSum
 	if !trueIsMinority {
-		newTrueSum, newFalseSum = majoritySum, minoritySum
+		newTrueSum, newFalseSum = newFalseSum, newTrueSum
+		newTrueHessianSum, newFalseHessianSum = newFalseHessianSum, newTrueHessianSum
 	}
 
-	for i, x := range trueSum {
+	for i, x := range sums.True {
 		newTrueSum[i] += x * sampleFrac
 	}
-	effectiveTrueCount := float32(splitTrueCount) + float32(len(trues))*sampleFrac
+	for i, x := range sums.TrueHessian {
+		newTrueHessianSum[i] += x * sampleFrac
+	}
 
-	newQuality := vectorNormSquared(newFalseSum)/float32(splitFalseCount) +
-		vectorNormSquared(newTrueSum)/effectiveTrueCount
-	oldQuality := vectorNormSquared(falseSum)/float32(len(falses)) +
-		vectorNormSquared(trueSum)*sampleFrac/float32(essentials.MaxInt(1, len(trues)))
-
-	return newQuality - oldQuality
+	return hessianSplitQuality(newTrueSum, newTrueHessianSum) +
+		hessianSplitQuality(newFalseSum, newFalseHessianSum)
 }
 
-func (b *Builder) slowFeatureSplitQuality(falses, trues []*TimestepSample,
-	falseSum, trueSum []float32, f BranchFeature, sampleFrac float32) float32 {
-	var newFalses []*TimestepSample
-	newTrues := append([]*TimestepSample{}, trues...)
-	for _, t := range falses {
-		val := t.BranchFeature(f)
-		if val {
-			newTrues = append(newTrues, t)
-		} else {
-			newFalses = append(newFalses, t)
-		}
+func hessianSplitQuality(grad []float32, hessian []float32) float32 {
+	h := &SquareMatrix{Dim: len(grad), Data: hessian}
+	// solution := h.Inverse().VectorProduct(grad)
+	// for i := range solution {
+	// 	solution[i] *= -1
+	// }
+	solution := []float32{-grad[0] / hessian[0], 0}
+	product := h.VectorProduct(solution)
+	var result float32
+	for i, g := range grad {
+		result += g*solution[i] + 0.5*product[i]*solution[i]
 	}
-	if len(newTrues) < b.MinSplitSamples || len(newFalses) < b.MinSplitSamples ||
-		len(newFalses) == 0 || len(newTrues) == 0 {
-		return 0
-	}
-	return lossDeltaForOptimalStep(newFalses, f) + lossDeltaForOptimalStep(newTrues, f)
+	return -result
 }
 
-func lossDeltaForOptimalStep(samples []*TimestepSample, f BranchFeature) float32 {
-	direction := gradientMean(samples)
-	lossForStep := func(step float32) float32 {
-		total := newKahanSum(1)
-		tmpAddition := []float32{0.0}
-		tmpOutput := make([]float32, len(samples[0].Timestep().Output))
-		for _, sample := range samples {
-			for i, x := range sample.Timestep().Output {
-				tmpOutput[i] = x - step*direction[i]
-			}
-			tmpAddition[0] = SoftmaxLoss(tmpOutput, sample.Timestep().Target)
-			total.Add(tmpAddition)
-		}
-		return total.Sum()[0]
+type gradientSums struct {
+	False []float32
+	True  []float32
+
+	FalseHessian []float32
+	TrueHessian  []float32
+}
+
+func newGradientSums(falses, trues []*TimestepSample) *gradientSums {
+	falseSum := gradientSum(falses, 0)
+	trueSum := gradientSum(trues, len(falseSum))
+	falseHessianSum := hessianSum(falses, 0)
+	trueHessianSum := hessianSum(trues, len(falseHessianSum))
+	return &gradientSums{
+		False:        falseSum,
+		True:         trueSum,
+		FalseHessian: falseHessianSum,
+		TrueHessian:  trueHessianSum,
 	}
-	step := minimizeUnary(0, 40, 20, lossForStep)
-	return lossForStep(0) - lossForStep(step)
+}
+
+func hessianSum(ts []*TimestepSample, dim int) []float32 {
+	if dim == 0 {
+		dim = len(ts[0].Timestep().Hessian.Data)
+	}
+	sum := newKahanSum(dim)
+	for _, t := range ts {
+		sum.Add(t.Timestep().Hessian.Data)
+	}
+	return sum.Sum()
+}
+
+func gradientSum(ts []*TimestepSample, dim int) []float32 {
+	if dim == 0 {
+		dim = len(ts[0].Timestep().Gradient)
+	}
+	sum := newKahanSum(dim)
+	for _, t := range ts {
+		sum.Add(t.Timestep().Gradient)
+	}
+	return sum.Sum()
+}
+
+func gradientMean(ts []*TimestepSample) []float32 {
+	sum := gradientSum(ts, 0)
+	scale := 1 / float32(len(ts))
+	for i := range sum {
+		sum[i] *= scale
+	}
+	return sum
 }
