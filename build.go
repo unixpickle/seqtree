@@ -343,23 +343,21 @@ func (b *Builder) featureSplitQuality(falses, trues []lossSample, sums *lossSums
 
 	trueIsMinority := splitTrueCount < splitFalseCount
 
-	minoritySum := make([]float32, len(sums.False))
+	minoritySum := newKahanSum(len(sums.False))
 	for i, val := range featureValues {
 		if val == trueIsMinority {
-			for j, x := range falses[i].Vector {
-				minoritySum[j] += x
-			}
+			minoritySum.Add(falses[i].Vector)
 		}
 	}
 
 	majoritySum := make([]float32, len(sums.False))
 	for i, x := range sums.False {
-		majoritySum[i] = x - minoritySum[i]
+		majoritySum[i] = x - minoritySum.Sum()[i]
 	}
 
-	newTrueSum, newFalseSum := minoritySum, majoritySum
+	newTrueSum, newFalseSum := minoritySum.Sum(), majoritySum
 	if !trueIsMinority {
-		newTrueSum, newFalseSum = majoritySum, minoritySum
+		newTrueSum, newFalseSum = newFalseSum, newTrueSum
 	}
 
 	oldTrueSum := make([]float32, len(newTrueSum))
@@ -451,7 +449,7 @@ func (b *Builder) computeOutputDelta(samples []lossSample) []float32 {
 }
 
 func (b *Builder) minimizePolynomial(p polynomial) float32 {
-	return minimizeUnary(-1, 1, 20, p.Evaluate)
+	return minimizeUnary(-1, 1, 30, p.Evaluate)
 }
 
 type lossSample struct {

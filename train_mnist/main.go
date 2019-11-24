@@ -78,7 +78,7 @@ func main() {
 		seqs = SampleSequences(dataset, model, Batch)
 		model.EvaluateAll(seqs)
 
-		seqtree.ScaleOptimalStep(seqtree.TimestepSamples(seqs), tree, MaxStep, 10, 20)
+		seqtree.ScaleOptimalStep(seqtree.TimestepSamples(seqs), tree, MaxStep, 10, 30)
 		delta := seqtree.AvgLossDelta(seqtree.TimestepSamples(seqs), tree, 1.0)
 		model.Add(tree, 1.0)
 

@@ -55,17 +55,21 @@ type polynomial []float32
 // It is very accurate when abs(a) < 1.
 func newPolynomialLogSigmoid(x float32) polynomial {
 	// Create a short Taylor series.
-	exp := float32(math.Exp(float64(x)))
-	invExp := float32(math.Exp(float64(-x)))
-	if math.IsInf(float64(exp), 1) {
-		exp = float32(math.Exp(12))
-	} else if math.IsInf(float64(invExp), 1) {
-		invExp = float32(math.Exp(12))
+	exp := math.Exp(float64(x))
+	invExp := math.Exp(float64(-x))
+	if math.IsInf(exp, 1) {
+		// Use a big number that is right in the middle of
+		// the range of 64-bit integers.
+		exp = 1 << 32
+	} else if math.IsInf(invExp, 1) {
+		invExp = 1 << 32
 	}
 
-	logValue := x
-	if x > -12 {
-		logValue = float32(math.Log(float64(1 / (1 + invExp))))
+	logValue := float64(x)
+	if x > -22 {
+		// In the typical case, the loss function cannot
+		// be approximated by f(x)=x.
+		logValue = math.Log(1 / (1 + invExp))
 	}
 
 	exp2 := exp * exp
@@ -73,6 +77,7 @@ func newPolynomialLogSigmoid(x float32) polynomial {
 	exp4 := exp2 * exp2
 	exp5 := exp3 * exp2
 	exp6 := exp3 * exp3
+	exp7 := exp4 * exp3
 
 	expP := exp + 1
 	expP2 := expP * expP
@@ -82,8 +87,11 @@ func newPolynomialLogSigmoid(x float32) polynomial {
 	expP6 := expP3 * expP3
 	expP7 := expP4 * expP3
 	expP8 := expP4 * expP4
+	expP9 := expP5 * expP4
 
-	res := polynomial{
+	// Coefficients match the "Triangle of Eulerian numbers"
+	// See https://oeis.org/A008292
+	res64 := []float64{
 		logValue,
 		1 / (exp + 1),
 		-1.0 / 2.0 * exp / expP2,
@@ -93,14 +101,18 @@ func newPolynomialLogSigmoid(x float32) polynomial {
 		-1.0 / 720.0 * exp * (-26*exp + 66*exp2 - 26*exp3 + exp4 + 1) / expP6,
 		1.0 / 5040.0 * exp * (57*exp - 302*exp2 + 302*exp3 - 57*exp4 + exp5 - 1) / expP7,
 		-1.0 / 40320.0 * exp * (-120*exp + 1191*exp2 - 2416*exp3 + 1191*exp4 - 120*exp5 + exp6 + 1) / expP8,
+		1.0 / 362880.0 * exp * (247*exp - 4293*exp2 + 15619*exp3 - 15619*exp4 + 4293*exp5 - 247*exp6 + exp7 - 1) / expP9,
 	}
-	for i, x := range res {
-		if math.IsNaN(float64(x)) {
-			// Usually this is infinity/infinity,
-			// which ends up being zero because the top
-			// term is O(x^n) and the bottom term is O(x^(n+2)).
-			res[i] = 0
+	res := make(polynomial, len(res64))
+	for i, x := range res64 {
+		if math.IsNaN(x) {
+			// If it's NaN, it's probably because x is so
+			// far towards one of he extremes that a power
+			// of exp is infinity. In this case, it's safe
+			// to just treat the term as approximately 0.
+			continue
 		}
+		res[i] = float32(x)
 	}
 	return res
 }
