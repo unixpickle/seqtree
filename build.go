@@ -417,6 +417,12 @@ func (b *Builder) computeLossSamples(samples []*TimestepSample) []lossSample {
 							poly[i] -= poly1[i] * ts.Target[1]
 						}
 					}
+
+					// Getting rid of the constant term improves
+					// numerical accuracy without changing the
+					// objective
+					poly[0] = 0
+
 					res[j].Vector = poly
 				} else {
 					grad := SoftmaxLossGrad(ts.Output, ts.Target)
