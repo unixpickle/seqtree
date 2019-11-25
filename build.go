@@ -184,65 +184,29 @@ func (b *Builder) buildSubtree(union BranchFeatureUnion, falses, trues []lossSam
 // The current split is indicated by falses and trues.
 // It is assumed that the newly selected feature will act
 // to move samples from falses into trues.
-func (b *Builder) optimalFeature(falses, trues []lossSample,
-	features []BranchFeature) *BranchFeature {
+func (b *Builder) optimalFeature(falses, trues []lossSample, f []BranchFeature) *BranchFeature {
 	sums := newLossSums(falses, trues)
-
-	if b.CandidateSplits <= 1 {
-		for _, feature := range features {
-			quality := b.featureSplitQuality(falses, trues, sums, feature, 1.0)
-			if quality > 0 {
-				return &feature
-			}
-		}
-		return nil
-	}
-
-	var lock sync.Mutex
 	var bestFeature BranchFeature
 	var bestQuality float32
 	var featuresTested int
 
-	featureChan := make(chan BranchFeature, 0)
-	var wg sync.WaitGroup
-
-	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for feature := range featureChan {
-				quality := b.featureSplitQuality(falses, trues, sums, feature, 1.0)
-				if quality <= 0 {
-					continue
-				}
-				lock.Lock()
-				if featuresTested == 0 {
-					bestFeature = feature
-					bestQuality = quality
-				} else if quality > bestQuality {
-					bestFeature = feature
-					bestQuality = quality
-				}
-				featuresTested++
-				lock.Unlock()
-			}
-		}()
-	}
-
-	for _, feature := range features {
-		featureChan <- feature
-		lock.Lock()
-		count := featuresTested
-		lock.Unlock()
-		// We will almost certainly check more than
-		// b.CandidateSplits features, but that's
-		// acceptable behavior.
-		if count >= b.CandidateSplits {
+	for _, feature := range f {
+		quality := b.featureSplitQuality(falses, trues, sums, feature, 1.0, true)
+		if quality <= 0 {
+			continue
+		}
+		if featuresTested == 0 {
+			bestFeature = feature
+			bestQuality = quality
+		} else if quality > bestQuality {
+			bestFeature = feature
+			bestQuality = quality
+		}
+		featuresTested++
+		if featuresTested >= b.CandidateSplits {
 			break
 		}
 	}
-	close(featureChan)
-	wg.Wait()
 
 	if featuresTested == 0 {
 		return nil
@@ -280,7 +244,7 @@ func (b *Builder) sortFeatures(falses, trues []lossSample, sampleFrac float32) [
 		go func() {
 			defer wg.Done()
 			for f := range featureChan {
-				quality := b.featureSplitQuality(falses, trues, sums, f, sampleFrac)
+				quality := b.featureSplitQuality(falses, trues, sums, f, sampleFrac, false)
 				if quality > 0 {
 					resultLock.Lock()
 					features = append(features, f)
@@ -317,19 +281,8 @@ func (b *Builder) sortFeatures(falses, trues []lossSample, sampleFrac float32) [
 //
 // See sortFeatures() for details on sampleFrac.
 func (b *Builder) featureSplitQuality(falses, trues []lossSample, sums *lossSums, f BranchFeature,
-	sampleFrac float32) float32 {
-	splitFalseCount := 0
-	splitTrueCount := 0
-	featureValues := make([]bool, len(falses))
-	for i, t := range falses {
-		val := t.BranchFeature(f)
-		featureValues[i] = val
-		if val {
-			splitTrueCount++
-		} else {
-			splitFalseCount++
-		}
-	}
+	sampleFrac float32, parallel bool) float32 {
+	featureValues, splitFalseCount, splitTrueCount := b.evaluateFeature(falses, f, parallel)
 
 	approxTrues := float32(len(trues)) + float32(splitTrueCount)/sampleFrac
 	approxFalses := float32(len(falses)-splitTrueCount) / sampleFrac
@@ -342,20 +295,13 @@ func (b *Builder) featureSplitQuality(falses, trues []lossSample, sums *lossSums
 	}
 
 	trueIsMinority := splitTrueCount < splitFalseCount
-
-	minoritySum := newKahanSum(len(sums.False))
-	for i, val := range featureValues {
-		if val == trueIsMinority {
-			minoritySum.Add(falses[i].Vector)
-		}
-	}
-
+	minoritySum := b.minoritySum(falses, featureValues, trueIsMinority, parallel)
 	majoritySum := make([]float32, len(sums.False))
 	for i, x := range sums.False {
-		majoritySum[i] = x - minoritySum.Sum()[i]
+		majoritySum[i] = x - minoritySum[i]
 	}
 
-	newTrueSum, newFalseSum := minoritySum.Sum(), majoritySum
+	newTrueSum, newFalseSum := minoritySum, majoritySum
 	if !trueIsMinority {
 		newTrueSum, newFalseSum = newFalseSum, newTrueSum
 	}
@@ -374,6 +320,88 @@ func (b *Builder) featureSplitQuality(falses, trues []lossSample, sums *lossSums
 		oldTrueCount)
 
 	return newQuality - oldQuality
+}
+
+func (b *Builder) evaluateFeature(samples []lossSample, f BranchFeature,
+	parallel bool) (values []bool, falses, trues int) {
+	values = make([]bool, len(samples))
+	if !parallel {
+		for i, t := range samples {
+			val := t.BranchFeature(f)
+			values[i] = val
+			if val {
+				trues++
+			} else {
+				falses++
+			}
+		}
+		return
+	}
+
+	var wg sync.WaitGroup
+	var lock sync.Mutex
+
+	numProcs := runtime.GOMAXPROCS(0)
+	for i := 0; i < numProcs; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			var localTrues, localFalses int
+			for j := i; j < len(samples); j += numProcs {
+				val := samples[j].BranchFeature(f)
+				values[j] = val
+				if val {
+					localTrues++
+				} else {
+					localFalses++
+				}
+			}
+			lock.Lock()
+			trues += localTrues
+			falses += localFalses
+			lock.Unlock()
+		}(i)
+	}
+
+	wg.Wait()
+	return
+}
+
+func (b *Builder) minoritySum(samples []lossSample, values []bool, trueIsMinority bool,
+	parallel bool) []float32 {
+	minoritySum := newKahanSum(len(samples[0].Vector))
+
+	if !parallel {
+		for i, val := range values {
+			if val == trueIsMinority {
+				minoritySum.Add(samples[i].Vector)
+			}
+		}
+		return minoritySum.Sum()
+	}
+
+	var wg sync.WaitGroup
+	var lock sync.Mutex
+
+	numProcs := runtime.GOMAXPROCS(0)
+	for i := 0; i < numProcs; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			localSum := newKahanSum(len(samples[0].Vector))
+			for j := i; j < len(samples); j += numProcs {
+				if values[j] == trueIsMinority {
+					localSum.Add(samples[j].Vector)
+				}
+			}
+			lock.Lock()
+			minoritySum.Add(localSum.Sum())
+			lock.Unlock()
+		}(i)
+	}
+
+	wg.Wait()
+	return minoritySum.Sum()
 }
 
 func (b *Builder) computeSplitQuality(falses, trues []float32,
