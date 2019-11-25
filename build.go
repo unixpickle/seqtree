@@ -319,6 +319,12 @@ func (b *Builder) featureSplitQuality(falses, trues []lossSample, sums *lossSums
 	oldQuality := b.computeSplitQuality(sums.False, oldTrueSum, float32(len(falses)),
 		oldTrueCount)
 
+	// Avoid numerically insignificant deltas.
+	minDelta := math.Abs(math.Min(float64(newQuality), float64(oldQuality))) * 1e-5
+	if math.Abs(float64(newQuality-oldQuality)) < minDelta {
+		return 0
+	}
+
 	return newQuality - oldQuality
 }
 
