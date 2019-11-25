@@ -7,15 +7,15 @@ import (
 
 // OptimalStep performs a line search to find a step size
 // that minimizes the loss.
-func OptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32, iters int) float32 {
-	outputDeltas := make([][]float32, len(timesteps))
+func OptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float64, iters int) float64 {
+	outputDeltas := make([][]float64, len(timesteps))
 	for i, ts := range timesteps {
 		outputDeltas[i] = t.Evaluate(ts).OutputDelta
 	}
 
-	return minimizeUnary(0, maxStep, iters, func(stepSize float32) float32 {
+	return minimizeUnary(0, maxStep, iters, func(stepSize float64) float64 {
 		var lock sync.Mutex
-		var currentLoss float32
+		var currentLoss float64
 
 		var wg sync.WaitGroup
 		numProcs := runtime.GOMAXPROCS(0)
@@ -24,8 +24,8 @@ func OptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32, iters in
 			go func(i int) {
 				defer wg.Done()
 				total := newKahanSum(1)
-				tmpAddition := []float32{0.0}
-				tmpOutput := make([]float32, len(timesteps[0].Timestep().Output))
+				tmpAddition := []float64{0.0}
+				tmpOutput := make([]float64, len(timesteps[0].Timestep().Output))
 				for j := i; j < len(outputDeltas); j += numProcs {
 					outputDelta := outputDeltas[j]
 					ts := timesteps[j].Timestep()
@@ -52,7 +52,7 @@ func OptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32, iters in
 // The minLeafSamples argument is the minimum number of
 // representative samples a leaf must have in order to be
 // scaled.
-func ScaleOptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32,
+func ScaleOptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float64,
 	minLeafSamples, iters int) {
 	leafToSample := map[*Leaf][]*Timestep{}
 	for _, ts := range timesteps {
@@ -63,9 +63,9 @@ func ScaleOptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32,
 		if len(samples) < minLeafSamples || len(samples) == 0 {
 			continue
 		}
-		scale := minimizeUnary(0, maxStep, iters, func(stepSize float32) float32 {
+		scale := minimizeUnary(0, maxStep, iters, func(stepSize float64) float64 {
 			var lock sync.Mutex
-			var currentLoss float32
+			var currentLoss float64
 
 			var wg sync.WaitGroup
 			numProcs := runtime.GOMAXPROCS(0)
@@ -74,8 +74,8 @@ func ScaleOptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32,
 				go func(i int) {
 					defer wg.Done()
 					total := newKahanSum(1)
-					tmpAddition := []float32{0.0}
-					tmpOutput := make([]float32, len(samples[0].Output))
+					tmpAddition := []float64{0.0}
+					tmpOutput := make([]float64, len(samples[0].Output))
 					for j := i; j < len(samples); j += numProcs {
 						sample := samples[j]
 						for k, x := range sample.Output {
@@ -100,9 +100,9 @@ func ScaleOptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32,
 
 // AvgLossDelta computes the average change in the loss
 // after taking a step.
-func AvgLossDelta(timesteps []*TimestepSample, t *Tree, currentStep float32) float32 {
+func AvgLossDelta(timesteps []*TimestepSample, t *Tree, currentStep float64) float64 {
 	var lock sync.Mutex
-	var currentDelta float32
+	var currentDelta float64
 
 	var wg sync.WaitGroup
 	numProcs := runtime.GOMAXPROCS(0)
@@ -118,7 +118,7 @@ func AvgLossDelta(timesteps []*TimestepSample, t *Tree, currentStep float32) flo
 				leaf := t.Evaluate(ts)
 				delta := SoftmaxLossDelta(ts.Timestep().Output, ts.Timestep().Target,
 					leaf.OutputDelta, -currentStep)
-				deltaTotal.Add([]float32{delta})
+				deltaTotal.Add([]float64{delta})
 			}
 			lock.Lock()
 			currentDelta += deltaTotal.Sum()[0]
@@ -126,5 +126,5 @@ func AvgLossDelta(timesteps []*TimestepSample, t *Tree, currentStep float32) flo
 		}(i)
 	}
 	wg.Wait()
-	return currentDelta / float32(len(timesteps))
+	return currentDelta / float64(len(timesteps))
 }

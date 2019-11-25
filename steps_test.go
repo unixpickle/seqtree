@@ -63,11 +63,11 @@ func BenchmarkOptimalStep(b *testing.B) {
 	}
 }
 
-func bruteForceOptimalStep(ts []*TimestepSample, t *Tree, stepsLeft int, min, max float32) float32 {
-	var minimum float32
-	var minStep float32
+func bruteForceOptimalStep(ts []*TimestepSample, t *Tree, stepsLeft int, min, max float64) float64 {
+	var minimum float64
+	var minStep float64
 	for i := 0; i <= 1000; i++ {
-		s := (max-min)*float32(i)/1000 + min
+		s := (max-min)*float64(i)/1000 + min
 		delta := AvgLossDelta(ts, t, s)
 		if delta < minimum {
 			minimum = delta

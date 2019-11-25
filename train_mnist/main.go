@@ -63,7 +63,7 @@ func main() {
 		seqs := SampleSequences(dataset, model, Batch)
 		model.EvaluateAll(seqs)
 
-		totalLoss := float32(0)
+		totalLoss := float64(0)
 		for _, seq := range seqs {
 			totalLoss += seq.MeanLoss()
 		}
@@ -110,9 +110,9 @@ func SampleSequences(ds mnist.DataSet, m *seqtree.Model, count int) []seqtree.Se
 					x := i % ImageSize
 					y := i / ImageSize
 					ts := &seqtree.Timestep{
-						Output:   make([]float32, 2),
+						Output:   make([]float64, 2),
 						Features: seqtree.NewBitmap(m.NumFeatures()),
-						Target:   make([]float32, 2),
+						Target:   make([]float64, 2),
 					}
 					if prev != -1 {
 						ts.Features.Set(prev, true)
@@ -141,7 +141,7 @@ func GenerateSequence(m *seqtree.Model) {
 		for col := 0; col < 4; col++ {
 			seq := seqtree.Sequence{
 				&seqtree.Timestep{
-					Output:   make([]float32, 2),
+					Output:   make([]float64, 2),
 					Features: seqtree.NewBitmap(m.NumFeatures()),
 				},
 			}
@@ -156,7 +156,7 @@ func GenerateSequence(m *seqtree.Model) {
 						img.SetGray(row*ImageSize+j, col*ImageSize+i, color.Gray{Y: 255})
 					}
 					ts = &seqtree.Timestep{
-						Output:   make([]float32, 2),
+						Output:   make([]float64, 2),
 						Features: seqtree.NewBitmap(m.NumFeatures()),
 					}
 					ts.Features.Set(num, true)

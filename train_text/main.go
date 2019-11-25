@@ -42,7 +42,7 @@ func main() {
 		seqs := SampleSequences(textData, model, Batch, Length)
 		model.EvaluateAll(seqs)
 
-		var loss float32
+		var loss float64
 		for _, seq := range seqs {
 			loss += seq.MeanLoss()
 		}
@@ -81,7 +81,7 @@ func SampleSequences(t []byte, m *seqtree.Model, count, length int) []seqtree.Se
 func GenerateSequence(m *seqtree.Model, length int) {
 	seq := seqtree.Sequence{
 		&seqtree.Timestep{
-			Output:   make([]float32, 256),
+			Output:   make([]float64, 256),
 			Features: seqtree.NewBitmap(m.NumFeatures()),
 		},
 	}
@@ -91,7 +91,7 @@ func GenerateSequence(m *seqtree.Model, length int) {
 		num := seqtree.SampleSoftmax(seq[len(seq)-1].Output)
 		res = append(res, byte(num))
 		ts := &seqtree.Timestep{
-			Output:   make([]float32, 256),
+			Output:   make([]float64, 256),
 			Features: seqtree.NewBitmap(m.NumFeatures()),
 		}
 		ts.Features.Set(num, true)

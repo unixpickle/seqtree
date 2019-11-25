@@ -7,11 +7,11 @@ import "math"
 //
 // This is only guaranteed to find a local minimum, not a
 // global minimum.
-func minimizeUnary(minX, maxX float32, iters int, f func(x float32) float32) float32 {
+func minimizeUnary(minX, maxX float64, iters int, f func(x float64) float64) float64 {
 	// Golden section search:
 	// https://en.wikipedia.org/wiki/Golden-section_search
 
-	var midValue1, midValue2 *float32
+	var midValue1, midValue2 *float64
 
 	for i := 0; i < iters; i++ {
 		mid1 := maxX - (maxX-minX)/math.Phi
@@ -39,21 +39,21 @@ func minimizeUnary(minX, maxX float32, iters int, f func(x float32) float32) flo
 	return (minX + maxX) / 2
 }
 
-func vectorNormSquared(v []float32) float32 {
-	var res float32
+func vectorNormSquared(v []float64) float64 {
+	var res float64
 	for _, x := range v {
 		res += x * x
 	}
 	return res
 }
 
-type polynomial []float32
+type polynomial []float64
 
 // newPolynomialLogSigmoid approximates the log of the
 // sigmoid function as a high-order polynomial.
 // The resulting polynomial is p(a) ~= log(sigmoid(x+a)).
 // It is very accurate when abs(a) < 1.
-func newPolynomialLogSigmoid(x float32) polynomial {
+func newPolynomialLogSigmoid(x float64) polynomial {
 	// Create a short Taylor series.
 	exp := math.Exp(float64(x))
 	invExp := math.Exp(float64(-x))
@@ -112,14 +112,14 @@ func newPolynomialLogSigmoid(x float32) polynomial {
 			// to just treat the term as approximately 0.
 			continue
 		}
-		res[i] = float32(x)
+		res[i] = float64(x)
 	}
 	return res
 }
 
-func (p polynomial) Evaluate(x float32) float32 {
-	coeff := float32(1)
-	res := float32(0)
+func (p polynomial) Evaluate(x float64) float64 {
+	coeff := float64(1)
+	res := float64(0)
 	for _, c := range p {
 		res += c * coeff
 		coeff *= x

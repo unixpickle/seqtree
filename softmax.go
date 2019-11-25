@@ -7,11 +7,11 @@ import (
 
 // SampleSoftmax samples a softmax distribution from
 // logits.
-func SampleSoftmax(outputs []float32) int {
+func SampleSoftmax(outputs []float64) int {
 	logProbs := logSoftmax(outputs)
-	p := rand.Float32()
+	p := rand.Float64()
 	for i, x := range logProbs {
-		p -= float32(math.Exp(float64(x)))
+		p -= float64(math.Exp(float64(x)))
 		if p <= 0 {
 			return i
 		}
@@ -21,7 +21,7 @@ func SampleSoftmax(outputs []float32) int {
 
 // SoftmaxLoss computes the loss function given output
 // logits and target probabilities.
-func SoftmaxLoss(outputs, targets []float32) float32 {
+func SoftmaxLoss(outputs, targets []float64) float64 {
 	// Code duplication from logSoftmax() prevents
 	// allocations and can speedup computation
 	// significantly.
@@ -38,9 +38,9 @@ func SoftmaxLoss(outputs, targets []float32) float32 {
 		sumOfExp += math.Exp(float64(x - max))
 	}
 
-	subtractor := max + float32(math.Log(float64(sumOfExp)))
+	subtractor := max + float64(math.Log(float64(sumOfExp)))
 
-	var loss float32
+	var loss float64
 	for i, x := range outputs {
 		loss += (subtractor - x) * targets[i]
 	}
@@ -49,8 +49,8 @@ func SoftmaxLoss(outputs, targets []float32) float32 {
 
 // SoftmaxLossGrad computes the gradient of SoftmaxLoss
 // with respect to the outputs.
-func SoftmaxLossGrad(outputs, targets []float32) []float32 {
-	var targetSum float32
+func SoftmaxLossGrad(outputs, targets []float64) []float64 {
+	var targetSum float64
 	for _, x := range targets {
 		targetSum += x
 	}
@@ -62,11 +62,11 @@ func SoftmaxLossGrad(outputs, targets []float32) []float32 {
 		}
 	}
 
-	grad := make([]float32, len(outputs))
+	grad := make([]float64, len(outputs))
 	for i, x := range outputs {
-		grad[i] = float32(math.Exp(float64(x - maxOutput)))
+		grad[i] = float64(math.Exp(float64(x - maxOutput)))
 	}
-	var gradSum float32
+	var gradSum float64
 	for _, x := range grad {
 		gradSum += x
 	}
@@ -79,16 +79,16 @@ func SoftmaxLossGrad(outputs, targets []float32) []float32 {
 
 // SoftmaxLossNaturalGrad is like SoftmaxLossGrad, except
 // the natural functional gradient is used.
-func SoftmaxLossNaturalGrad(outputs, targets []float32) []float32 {
-	prob := float32(math.Exp(float64(-SoftmaxLoss(outputs, targets))))
+func SoftmaxLossNaturalGrad(outputs, targets []float64) []float64 {
+	prob := float64(math.Exp(float64(-SoftmaxLoss(outputs, targets))))
 
 	// Add a small epsilon to prevent divide-by-zero.
 	prob += 1e-4
 
-	baseGrad := 1.0 / (float32(len(outputs)) * prob)
-	naturalGrad := make([]float32, len(outputs))
+	baseGrad := 1.0 / (float64(len(outputs)) * prob)
+	naturalGrad := make([]float64, len(outputs))
 	for i, x := range targets {
-		naturalGrad[i] = baseGrad * (1 - x*float32(len(outputs)))
+		naturalGrad[i] = baseGrad * (1 - x*float64(len(outputs)))
 	}
 	return naturalGrad
 }
@@ -98,25 +98,25 @@ func SoftmaxLossNaturalGrad(outputs, targets []float32) []float32 {
 //     KL(softmax(outputs+deltas*stepSize)||softmax(outputs))
 //
 // This can be used to bound the KL of updates.
-func SoftmaxLossKL(outputs, deltas []float32, stepSize float32) float32 {
+func SoftmaxLossKL(outputs, deltas []float64, stepSize float64) float64 {
 	oldLogProbs := logSoftmax(outputs)
 	newLogProbs := logSoftmax(addDelta(outputs, deltas, stepSize))
-	var res float32
+	var res float64
 	for i, x := range newLogProbs {
-		res += float32(math.Exp(float64(x)) * float64(x-oldLogProbs[i]))
+		res += float64(math.Exp(float64(x)) * float64(x-oldLogProbs[i]))
 	}
 	return res
 }
 
 // SoftmaxLossDelta computes how much the loss changes due
 // to adding deltas*stepSize to outputs.
-func SoftmaxLossDelta(outputs, targets, deltas []float32, stepSize float32) float32 {
+func SoftmaxLossDelta(outputs, targets, deltas []float64, stepSize float64) float64 {
 	loss1 := SoftmaxLoss(outputs, targets)
 	loss2 := SoftmaxLoss(addDelta(outputs, deltas, stepSize), targets)
 	return loss2 - loss1
 }
 
-func logSoftmax(logits []float32) []float32 {
+func logSoftmax(logits []float64) []float64 {
 	max := logits[0]
 	for _, x := range logits[1:] {
 		if x > max {
@@ -129,9 +129,9 @@ func logSoftmax(logits []float32) []float32 {
 		sumOfExp += math.Exp(float64(x - max))
 	}
 
-	subtractor := max + float32(math.Log(float64(sumOfExp)))
+	subtractor := max + float64(math.Log(float64(sumOfExp)))
 
-	res := make([]float32, len(logits))
+	res := make([]float64, len(logits))
 	for i, x := range logits {
 		res[i] = x - subtractor
 	}
@@ -139,8 +139,8 @@ func logSoftmax(logits []float32) []float32 {
 	return res
 }
 
-func addDelta(v1, v2 []float32, scale float32) []float32 {
-	res := make([]float32, len(v1))
+func addDelta(v1, v2 []float64, scale float64) []float64 {
+	res := make([]float64, len(v1))
 	for i, x := range v1 {
 		res[i] = x + v2[i]*scale
 	}

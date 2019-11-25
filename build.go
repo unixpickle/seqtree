@@ -130,7 +130,7 @@ func (b *Builder) buildUnion(union BranchFeatureUnion, falses, trues []lossSampl
 			splitSamples[i] = falses[j]
 		}
 	}
-	sampleFrac := float32(float64(len(splitSamples)) / float64(len(falses)))
+	sampleFrac := float64(float64(len(splitSamples)) / float64(len(falses)))
 	features := b.sortFeatures(splitSamples, trues, sampleFrac)
 
 	var bestFeature *BranchFeature
@@ -187,7 +187,7 @@ func (b *Builder) buildSubtree(union BranchFeatureUnion, falses, trues []lossSam
 func (b *Builder) optimalFeature(falses, trues []lossSample, f []BranchFeature) *BranchFeature {
 	sums := newLossSums(falses, trues)
 	var bestFeature BranchFeature
-	var bestQuality float32
+	var bestQuality float64
 	var featuresTested int
 
 	for _, feature := range f {
@@ -226,7 +226,7 @@ func (b *Builder) optimalFeature(falses, trues []lossSample, f []BranchFeature) 
 // the fraction of the original falses slice that was
 // passed.
 // The trues argument is never a subset.
-func (b *Builder) sortFeatures(falses, trues []lossSample, sampleFrac float32) []BranchFeature {
+func (b *Builder) sortFeatures(falses, trues []lossSample, sampleFrac float64) []BranchFeature {
 	if len(falses) == 0 {
 		panic("no data")
 	}
@@ -235,7 +235,7 @@ func (b *Builder) sortFeatures(falses, trues []lossSample, sampleFrac float32) [
 
 	var resultLock sync.Mutex
 	var features []BranchFeature
-	var qualities []float32
+	var qualities []float64
 
 	featureChan := make(chan BranchFeature, 10)
 	wg := sync.WaitGroup{}
@@ -281,11 +281,11 @@ func (b *Builder) sortFeatures(falses, trues []lossSample, sampleFrac float32) [
 //
 // See sortFeatures() for details on sampleFrac.
 func (b *Builder) featureSplitQuality(falses, trues []lossSample, sums *lossSums, f BranchFeature,
-	sampleFrac float32, parallel bool) float32 {
+	sampleFrac float64, parallel bool) float64 {
 	featureValues, splitFalseCount, splitTrueCount := b.evaluateFeature(falses, f, parallel)
 
-	approxTrues := float32(len(trues)) + float32(splitTrueCount)/sampleFrac
-	approxFalses := float32(len(falses)-splitTrueCount) / sampleFrac
+	approxTrues := float64(len(trues)) + float64(splitTrueCount)/sampleFrac
+	approxFalses := float64(len(falses)-splitTrueCount) / sampleFrac
 
 	if splitFalseCount == 0 || splitTrueCount == 0 ||
 		int(approxTrues) < b.MinSplitSamples ||
@@ -296,7 +296,7 @@ func (b *Builder) featureSplitQuality(falses, trues []lossSample, sums *lossSums
 
 	trueIsMinority := splitTrueCount < splitFalseCount
 	minoritySum := b.minoritySum(falses, featureValues, trueIsMinority, parallel)
-	majoritySum := make([]float32, len(sums.False))
+	majoritySum := make([]float64, len(sums.False))
 	for i, x := range sums.False {
 		majoritySum[i] = x - minoritySum[i]
 	}
@@ -306,17 +306,17 @@ func (b *Builder) featureSplitQuality(falses, trues []lossSample, sums *lossSums
 		newTrueSum, newFalseSum = newFalseSum, newTrueSum
 	}
 
-	oldTrueSum := make([]float32, len(newTrueSum))
+	oldTrueSum := make([]float64, len(newTrueSum))
 	for i, x := range sums.True {
 		newTrueSum[i] += x * sampleFrac
 		oldTrueSum[i] += x * sampleFrac
 	}
-	oldTrueCount := float32(len(trues)) * sampleFrac
-	effectiveTrueCount := float32(splitTrueCount) + oldTrueCount
+	oldTrueCount := float64(len(trues)) * sampleFrac
+	effectiveTrueCount := float64(splitTrueCount) + oldTrueCount
 
-	newQuality := b.computeSplitQuality(newFalseSum, newTrueSum, float32(splitFalseCount),
+	newQuality := b.computeSplitQuality(newFalseSum, newTrueSum, float64(splitFalseCount),
 		effectiveTrueCount)
-	oldQuality := b.computeSplitQuality(sums.False, oldTrueSum, float32(len(falses)),
+	oldQuality := b.computeSplitQuality(sums.False, oldTrueSum, float64(len(falses)),
 		oldTrueCount)
 
 	return newQuality - oldQuality
@@ -374,7 +374,7 @@ func (b *Builder) evaluateFeature(samples []lossSample, f BranchFeature,
 }
 
 func (b *Builder) minoritySum(samples []lossSample, values []bool, trueIsMinority bool,
-	parallel bool) []float32 {
+	parallel bool) []float64 {
 	minoritySum := newKahanSum(len(samples[0].Vector))
 
 	if !parallel {
@@ -410,8 +410,8 @@ func (b *Builder) minoritySum(samples []lossSample, values []bool, trueIsMinorit
 	return minoritySum.Sum()
 }
 
-func (b *Builder) computeSplitQuality(falses, trues []float32,
-	falseCount, trueCount float32) float32 {
+func (b *Builder) computeSplitQuality(falses, trues []float64,
+	falseCount, trueCount float64) float64 {
 	if b.HigherOrder {
 		poly1 := polynomial(falses)
 		min1 := b.minimizePolynomial(poly1)
@@ -470,7 +470,7 @@ func (b *Builder) computeLossSamples(samples []*TimestepSample) []lossSample {
 	return res
 }
 
-func (b *Builder) computeOutputDelta(samples []lossSample) []float32 {
+func (b *Builder) computeOutputDelta(samples []lossSample) []float64 {
 	sum := newKahanSum(len(samples[0].Vector))
 	for _, s := range samples {
 		sum.Add(s.Vector)
@@ -479,17 +479,17 @@ func (b *Builder) computeOutputDelta(samples []lossSample) []float32 {
 
 	if b.HigherOrder {
 		x := b.minimizePolynomial(polynomial(res))
-		return []float32{-x, x}
+		return []float64{-x, x}
 	}
 
 	for i, x := range res {
-		res[i] = x / float32(len(samples))
+		res[i] = x / float64(len(samples))
 	}
 	return res
 }
 
-func (b *Builder) minimizePolynomial(p polynomial) float32 {
-	return minimizeUnary(-1, 1, 30, p.Evaluate)
+func (b *Builder) minimizePolynomial(p polynomial) float64 {
+	return minimizeUnary(-1, 1, 60, p.Evaluate)
 }
 
 type lossSample struct {
@@ -499,7 +499,7 @@ type lossSample struct {
 	// function for this sample.
 	// It may be a gradient, or a set of polynomial
 	// coefficients.
-	Vector []float32
+	Vector []float64
 }
 
 func (l *lossSample) branchFeatureFast(stepsInPast, byteIdx int, bitMask byte) bool {
@@ -513,8 +513,8 @@ func (l *lossSample) branchFeatureFast(stepsInPast, byteIdx int, bitMask byte) b
 }
 
 type lossSums struct {
-	False []float32
-	True  []float32
+	False []float64
+	True  []float64
 }
 
 func newLossSums(falses, trues []lossSample) *lossSums {

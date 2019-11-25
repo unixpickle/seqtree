@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/gonum/blas/blas32"
+	"github.com/gonum/blas/blas64"
 	"github.com/pkg/errors"
 )
 
@@ -46,9 +46,9 @@ func (m *Model) EvaluateAt(seq Sequence, start int) {
 	for _, t := range m.Trees {
 		for i, ts := range seq[start:] {
 			leaf := t.Evaluate(&TimestepSample{Sequence: seq, Index: i + start})
-			v1 := blas32.Vector{Inc: 1, Data: leaf.OutputDelta}
-			v2 := blas32.Vector{Inc: 1, Data: ts.Output}
-			blas32.Axpy(len(ts.Output), 1.0, v1, v2)
+			v1 := blas64.Vector{Inc: 1, Data: leaf.OutputDelta}
+			v2 := blas64.Vector{Inc: 1, Data: ts.Output}
+			blas64.Axpy(len(ts.Output), 1.0, v1, v2)
 			if leaf.Feature != 0 {
 				ts.Features.Set(leaf.Feature, true)
 			}
@@ -80,7 +80,7 @@ func (m *Model) EvaluateAll(seqs []Sequence) {
 
 // Add adds a tree to the model, scaling it according to
 // the negative of stepSize.
-func (m *Model) Add(t *Tree, stepSize float32) {
+func (m *Model) Add(t *Tree, stepSize float64) {
 	t.Scale(-stepSize)
 	m.Trees = append(m.Trees, t)
 	m.ExtraFeatures += t.NumFeatures()
@@ -150,7 +150,7 @@ func (t *Tree) NumFeatures() int {
 }
 
 // Scale scales the tree.
-func (t *Tree) Scale(s float32) {
+func (t *Tree) Scale(s float64) {
 	if t.Leaf != nil {
 		for i, x := range t.Leaf.OutputDelta {
 			t.Leaf.OutputDelta[i] = x * s
@@ -173,7 +173,7 @@ type Branch struct {
 type Leaf struct {
 	// OutputDelta is the vector to add to the prediction
 	// outputs at the current timestep.
-	OutputDelta []float32
+	OutputDelta []float64
 
 	// If non-zero, this is a feature to set in the sample
 	// at the current timestep, in addition to the

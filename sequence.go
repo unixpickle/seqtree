@@ -9,8 +9,8 @@ package seqtree
 func MakeOneHotSequence(seq []int, outputSize, numFeatures int) Sequence {
 	ts := &Timestep{
 		Features: NewBitmap(numFeatures),
-		Output:   make([]float32, outputSize),
-		Target:   make([]float32, outputSize),
+		Output:   make([]float64, outputSize),
+		Target:   make([]float64, outputSize),
 	}
 	res := Sequence{}
 	for _, x := range seq {
@@ -18,8 +18,8 @@ func MakeOneHotSequence(seq []int, outputSize, numFeatures int) Sequence {
 		res = append(res, ts)
 		ts = &Timestep{
 			Features: NewBitmap(numFeatures),
-			Output:   make([]float32, outputSize),
-			Target:   make([]float32, outputSize),
+			Output:   make([]float64, outputSize),
+			Target:   make([]float64, outputSize),
 		}
 		ts.Features.Set(x, true)
 	}
@@ -30,12 +30,12 @@ func MakeOneHotSequence(seq []int, outputSize, numFeatures int) Sequence {
 type Sequence []*Timestep
 
 // MeanLoss computes the mean loss for the sequence.
-func (s Sequence) MeanLoss() float32 {
-	var total float32
+func (s Sequence) MeanLoss() float64 {
+	var total float64
 	for _, t := range s {
 		total += SoftmaxLoss(t.Output, t.Target)
 	}
-	return total / float32(len(s))
+	return total / float64(len(s))
 }
 
 // Timestep represents a single timestep in a sequence.
@@ -45,11 +45,11 @@ type Timestep struct {
 
 	// Output is the current prediction parameter vector
 	// for this timestamp.
-	Output []float32
+	Output []float64
 
 	// Target is a vector of output probabilities
 	// representing the ground truth label.
-	Target []float32
+	Target []float64
 }
 
 // TimestepSample points to a timestep in a sequence.
