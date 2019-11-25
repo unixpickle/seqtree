@@ -126,7 +126,7 @@ func (b *Builder) buildUnion(union BranchFeatureUnion, falses, trues []lossSampl
 	splitSamples := falses
 	if b.MaxSplitSamples != 0 && len(splitSamples) > b.MaxSplitSamples {
 		splitSamples = make([]lossSample, b.MaxSplitSamples)
-		for i, j := range rand.Perm(len(splitSamples))[:b.MaxSplitSamples] {
+		for i, j := range rand.Perm(len(falses))[:b.MaxSplitSamples] {
 			splitSamples[i] = falses[j]
 		}
 	}
