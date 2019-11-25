@@ -324,10 +324,16 @@ func (b *Builder) featureSplitQuality(falses, trues []lossSample, sums *lossSums
 
 func (b *Builder) evaluateFeature(samples []lossSample, f BranchFeature,
 	parallel bool) (values []bool, falses, trues int) {
+	byteIdx := f.Feature >> 3
+	bitMask := byte(1) << uint8(f.Feature&7)
+	if f.Feature == -1 {
+		byteIdx = -1
+	}
+
 	values = make([]bool, len(samples))
 	if !parallel {
-		for i, t := range samples {
-			val := t.BranchFeature(f)
+		for i, s := range samples {
+			val := s.branchFeatureFast(f.StepsInPast, byteIdx, bitMask)
 			values[i] = val
 			if val {
 				trues++
@@ -348,7 +354,7 @@ func (b *Builder) evaluateFeature(samples []lossSample, f BranchFeature,
 			defer wg.Done()
 			var localTrues, localFalses int
 			for j := i; j < len(samples); j += numProcs {
-				val := samples[j].BranchFeature(f)
+				val := samples[j].branchFeatureFast(f.StepsInPast, byteIdx, bitMask)
 				values[j] = val
 				if val {
 					localTrues++
@@ -494,6 +500,16 @@ type lossSample struct {
 	// It may be a gradient, or a set of polynomial
 	// coefficients.
 	Vector []float32
+}
+
+func (l *lossSample) branchFeatureFast(stepsInPast, byteIdx int, bitMask byte) bool {
+	if stepsInPast > l.Index {
+		return byteIdx == -1
+	} else if byteIdx == -1 {
+		return false
+	}
+	ts := l.Sequence[l.Index-stepsInPast]
+	return ts.Features.bytes[byteIdx]&bitMask != 0
 }
 
 type lossSums struct {
