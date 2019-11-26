@@ -123,18 +123,25 @@ func (b *Builder) buildUnion(union BranchFeatureUnion, falses, trues []lossSampl
 		return b.buildSubtree(union, falses, trues, depth, nextNewFeature)
 	}
 
-	splitSamples := falses
-	if b.MaxSplitSamples != 0 && len(splitSamples) > b.MaxSplitSamples {
-		splitSamples = make([]lossSample, b.MaxSplitSamples)
+	splitFalses := falses
+	splitTrues := trues
+	sampleFrac := float32(0)
+	if b.MaxSplitSamples != 0 && len(splitFalses) > b.MaxSplitSamples {
+		splitFalses = make([]lossSample, b.MaxSplitSamples)
 		for i, j := range rand.Perm(len(falses))[:b.MaxSplitSamples] {
-			splitSamples[i] = falses[j]
+			splitFalses[i] = falses[j]
+		}
+		sampleFrac = float32(float64(len(splitFalses)) / float64(len(falses)))
+		splitTrues := make([]lossSample, int(float32(len(trues))*sampleFrac))
+		for i, j := range rand.Perm(len(trues))[:len(splitTrues)] {
+			splitTrues[i] = trues[j]
 		}
 	}
-	sampleFrac := float32(float64(len(splitSamples)) / float64(len(falses)))
-	features := b.sortFeatures(splitSamples, trues, sampleFrac)
+
+	features := b.sortFeatures(splitTrues, splitFalses, sampleFrac)
 
 	var bestFeature *BranchFeature
-	if len(splitSamples) == len(falses) {
+	if len(splitFalses) == len(falses) {
 		// sortFeatures() gave an exact result.
 		if len(features) > 0 {
 			bestFeature = &features[0]
@@ -223,9 +230,8 @@ func (b *Builder) optimalFeature(falses, trues []lossSample, f []BranchFeature) 
 // This may be used with a subset of all of the
 // falses, in order to improve performance.
 // In this case, sampleFrac is less than 1.0 and indicates
-// the fraction of the original falses slice that was
-// passed.
-// The trues argument is never a subset.
+// the fraction of the original falses and trues slice
+// that was passed.
 func (b *Builder) sortFeatures(falses, trues []lossSample, sampleFrac float32) []BranchFeature {
 	if len(falses) == 0 {
 		panic("no data")
@@ -284,8 +290,8 @@ func (b *Builder) featureSplitQuality(falses, trues []lossSample, sums *lossSums
 	sampleFrac float32, parallel bool) float32 {
 	featureValues, splitFalseCount, splitTrueCount := b.evaluateFeature(falses, f, parallel)
 
-	approxTrues := float32(len(trues)) + float32(splitTrueCount)/sampleFrac
-	approxFalses := float32(len(falses)-splitTrueCount) / sampleFrac
+	approxTrues := float32(len(trues)+splitTrueCount) / sampleFrac
+	approxFalses := float32(splitFalseCount) / sampleFrac
 
 	if splitFalseCount == 0 || splitTrueCount == 0 ||
 		int(approxTrues) < b.MinSplitSamples ||
@@ -305,19 +311,14 @@ func (b *Builder) featureSplitQuality(falses, trues []lossSample, sums *lossSums
 	if !trueIsMinority {
 		newTrueSum, newFalseSum = newFalseSum, newTrueSum
 	}
-
-	oldTrueSum := make([]float32, len(newTrueSum))
 	for i, x := range sums.True {
-		newTrueSum[i] += x * sampleFrac
-		oldTrueSum[i] += x * sampleFrac
+		newTrueSum[i] += x
 	}
-	oldTrueCount := float32(len(trues)) * sampleFrac
-	effectiveTrueCount := float32(splitTrueCount) + oldTrueCount
 
 	newQuality := b.computeSplitQuality(newFalseSum, newTrueSum, float32(splitFalseCount),
-		effectiveTrueCount)
-	oldQuality := b.computeSplitQuality(sums.False, oldTrueSum, float32(len(falses)),
-		oldTrueCount)
+		float32(splitTrueCount+len(trues)))
+	oldQuality := b.computeSplitQuality(sums.False, sums.True, float32(len(falses)),
+		float32(len(trues)))
 
 	// Avoid numerically insignificant deltas.
 	minDelta := math.Abs(math.Min(float64(newQuality), float64(oldQuality))) * 1e-6
