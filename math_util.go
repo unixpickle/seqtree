@@ -126,3 +126,48 @@ func (p polynomial) Evaluate(x float32) float32 {
 	}
 	return res
 }
+
+type hessianMatrix struct {
+	Dim    int
+	Values []float32
+}
+
+func newHessianMatrixSoftmax(outputs, targets []float32) *hessianMatrix {
+	max := outputs[0]
+	for _, x := range outputs[1:] {
+		if x > max {
+			max = x
+		}
+	}
+
+	exps := make([]float32, len(outputs))
+	expSum := float32(0)
+	for i, x := range outputs {
+		exps[i] = float32(math.Exp(float64(x - max)))
+		expSum += exps[i]
+	}
+	expSumSq := expSum * expSum
+
+	targetSum := float32(0)
+	for _, x := range targets {
+		targetSum += x
+	}
+
+	res := &hessianMatrix{
+		Dim:    len(outputs),
+		Values: make([]float32, len(outputs)*len(outputs)),
+	}
+
+	for i := range outputs {
+		for j := range outputs {
+			val := -exps[j] * exps[i] / expSumSq
+			if i == j {
+				val += exps[i] / expSum
+			}
+			val *= targetSum
+			res.Values[i+j*res.Dim] = val
+		}
+	}
+
+	return res
+}
