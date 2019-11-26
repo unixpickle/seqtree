@@ -42,6 +42,11 @@ type Builder struct {
 	// may be tested, at negligible performance cost.
 	CandidateSplits int
 
+	// CandidatePruneSamples is the number of samples to
+	// test each candidate split on before testing it on
+	// the full dataset.
+	CandidatePruneSamples int
+
 	// MaxUnion is the maximum number of features to
 	// include in a union.
 	// The special value 0 is treated as 1, indicating
@@ -123,14 +128,7 @@ func (b *Builder) buildUnion(union BranchFeatureUnion, falses, trues []lossSampl
 		return b.buildSubtree(union, falses, trues, depth, nextNewFeature)
 	}
 
-	splitSamples := falses
-	if b.MaxSplitSamples != 0 && len(splitSamples) > b.MaxSplitSamples {
-		splitSamples = make([]lossSample, b.MaxSplitSamples)
-		for i, j := range rand.Perm(len(falses))[:b.MaxSplitSamples] {
-			splitSamples[i] = falses[j]
-		}
-	}
-	sampleFrac := float32(float64(len(splitSamples)) / float64(len(falses)))
+	splitSamples, sampleFrac := subsampleLimit(falses, b.MaxSplitSamples)
 	features := b.sortFeatures(splitSamples, trues, sampleFrac)
 
 	var bestFeature *BranchFeature
@@ -187,6 +185,9 @@ func (b *Builder) buildSubtree(union BranchFeatureUnion, falses, trues []lossSam
 func (b *Builder) optimalFeature(falses, trues []lossSample, f []BranchFeature) *BranchFeature {
 	sums := newLossSums(falses, trues)
 
+	pruneFalses, pruneFrac := subsampleLimit(falses, b.CandidatePruneSamples)
+	pruneSums := newLossSums(pruneFalses, trues)
+
 	var lock sync.Mutex
 	var bestFeature BranchFeature
 	var bestQuality float32
@@ -230,7 +231,11 @@ func (b *Builder) optimalFeature(falses, trues []lossSample, f []BranchFeature) 
 					return
 				}
 				feature := *fPtr
-				putResult(feature, b.featureSplitQuality(falses, trues, sums, feature, 1.0))
+				quality := b.featureSplitQuality(pruneFalses, trues, pruneSums, feature, pruneFrac)
+				if quality > 0 && len(pruneFalses) != len(falses) {
+					quality = b.featureSplitQuality(falses, trues, sums, feature, 1.0)
+				}
+				putResult(feature, quality)
 			}
 		}()
 	}
@@ -504,4 +509,16 @@ func newLossSums(falses, trues []lossSample) *lossSums {
 		trueSum.Add(s.Vector)
 	}
 	return &lossSums{False: falseSum.Sum(), True: trueSum.Sum()}
+}
+
+func subsampleLimit(samples []lossSample, max int) ([]lossSample, float32) {
+	splitSamples := samples
+	if max != 0 && len(splitSamples) > max {
+		splitSamples = make([]lossSample, max)
+		for i, j := range rand.Perm(len(samples))[:max] {
+			splitSamples[i] = samples[j]
+		}
+	}
+	sampleFrac := float32(float64(len(splitSamples)) / float64(len(samples)))
+	return splitSamples, sampleFrac
 }

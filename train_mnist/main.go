@@ -24,15 +24,16 @@ const (
 
 	Batch    = 4000
 	Depth    = 4
-	MaxUnion = 3
+	MaxUnion = 10
 	MaxStep  = 20.0
 
 	MinSplitSamplesMin = 100
 	MinSplitSamplesMax = 1000
 
 	// Split with a small subset of the entire batch.
-	MaxSplitSamples = 10 * ImageSize * ImageSize
-	CandidateSplits = 20
+	MaxSplitSamples       = 100 * ImageSize * ImageSize
+	CandidateSplits       = 100 * ImageSize * ImageSize
+	CandidatePruneSamples = 500 * ImageSize * ImageSize
 )
 
 func main() {
@@ -51,12 +52,13 @@ func main() {
 	model.Load("model.json")
 
 	builder := seqtree.Builder{
-		Depth:           Depth,
-		Horizons:        horizons,
-		MaxSplitSamples: MaxSplitSamples,
-		MaxUnion:        MaxUnion,
-		CandidateSplits: CandidateSplits,
-		HigherOrder:     true,
+		Depth:                 Depth,
+		Horizons:              horizons,
+		MaxSplitSamples:       MaxSplitSamples,
+		MaxUnion:              MaxUnion,
+		CandidateSplits:       CandidateSplits,
+		CandidatePruneSamples: CandidatePruneSamples,
+		HigherOrder:           true,
 	}
 
 	for i := 0; true; i++ {
