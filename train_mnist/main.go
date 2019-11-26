@@ -32,7 +32,7 @@ const (
 
 	// Split with a small subset of the entire batch.
 	MaxSplitSamples       = 100 * ImageSize * ImageSize
-	CandidateSplits       = 100 * ImageSize * ImageSize
+	CandidateSplits       = 20
 	CandidatePruneSamples = 500 * ImageSize * ImageSize
 )
 
