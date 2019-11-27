@@ -91,28 +91,21 @@ func (b *Builder) Build(samples []*TimestepSample) *Tree {
 	if len(samples) == 0 {
 		panic("no data")
 	}
-	ts := samples[0].Timestep()
-	numFeatures := ts.Features.Len()
 	data := b.computeLossSamples(samples)
-	return b.build(data, b.Depth, numFeatures)
+	return b.build(data, b.Depth)
 }
 
 // build recursively creates a tree that splits up the
 // samples in order to fit the functional gradient.
-//
-// The nextNewFeature argument specifies the current
-// number of features, so that new leaves can be assigned
-// unused feature numbers.
-func (b *Builder) build(samples []lossSample, depth, nextNewFeature int) *Tree {
+func (b *Builder) build(samples []lossSample, depth int) *Tree {
 	if depth == 0 || len(samples) <= b.MinSplitSamples {
 		return &Tree{
 			Leaf: &Leaf{
 				OutputDelta: b.computeOutputDelta(samples),
-				Feature:     nextNewFeature,
 			},
 		}
 	}
-	return b.buildUnion(nil, samples, nil, depth, nextNewFeature)
+	return b.buildUnion(nil, samples, nil, depth)
 }
 
 // buildUnion is like build(), but it starts with a
@@ -126,10 +119,10 @@ func (b *Builder) build(samples []lossSample, depth, nextNewFeature int) *Tree {
 //
 // This function may modify the trues slice, but not the
 // falses slice.
-func (b *Builder) buildUnion(union BranchFeatureUnion, falses, trues []lossSample, depth,
-	nextNewFeature int) *Tree {
+func (b *Builder) buildUnion(union BranchFeatureUnion, falses, trues []lossSample,
+	depth int) *Tree {
 	if len(union) > 0 && len(union) >= b.MaxUnion {
-		return b.buildSubtree(union, falses, trues, depth, nextNewFeature)
+		return b.buildSubtree(union, falses, trues, depth)
 	}
 
 	splitSamples, sampleFrac := subsampleLimit(falses, b.MaxSplitSamples)
@@ -146,7 +139,7 @@ func (b *Builder) buildUnion(union BranchFeatureUnion, falses, trues []lossSampl
 	}
 
 	if bestFeature == nil {
-		return b.buildSubtree(union, falses, trues, depth, nextNewFeature)
+		return b.buildSubtree(union, falses, trues, depth)
 	}
 
 	var newFalses []lossSample
@@ -158,18 +151,18 @@ func (b *Builder) buildUnion(union BranchFeatureUnion, falses, trues []lossSampl
 		}
 	}
 
-	return b.buildUnion(append(union, *bestFeature), newFalses, trues, depth, nextNewFeature)
+	return b.buildUnion(append(union, *bestFeature), newFalses, trues, depth)
 }
 
 // buildSubtree creates the branches (or leaf) node for
 // the given union and its resulting split.
 func (b *Builder) buildSubtree(union BranchFeatureUnion, falses, trues []lossSample,
-	depth, nextNewFeature int) *Tree {
+	depth int) *Tree {
 	if len(union) == 0 {
-		return b.build(falses, 0, nextNewFeature)
+		return b.build(falses, 0)
 	}
-	tree1 := b.build(falses, depth-1, nextNewFeature)
-	tree2 := b.build(trues, depth-1, nextNewFeature+tree1.NumFeatures())
+	tree1 := b.build(falses, depth-1)
+	tree2 := b.build(trues, depth-1)
 	return &Tree{
 		Branch: &Branch{
 			Feature:     union,

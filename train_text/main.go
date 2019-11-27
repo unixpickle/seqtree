@@ -51,6 +51,7 @@ func main() {
 
 		builder.ExtraFeatures = model.ExtraFeatures
 		tree := builder.Build(seqtree.TimestepSamples(seqs))
+		seqtree.AddLeafFeatures(tree, model.NumFeatures())
 
 		seqs = SampleSequences(textData, model, Batch, Length)
 		model.EvaluateAll(seqs)

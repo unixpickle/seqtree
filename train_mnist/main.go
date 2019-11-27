@@ -75,6 +75,7 @@ func main() {
 			MinSplitSamplesMin
 		builder.ExtraFeatures = model.ExtraFeatures
 		tree := builder.Build(seqtree.TimestepSamples(seqs))
+		seqtree.AddLeafFeatures(tree, model.NumFeatures())
 
 		// Optimize step size on a different batch.
 		seqs = SampleSequences(dataset, model, Batch)

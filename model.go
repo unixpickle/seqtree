@@ -149,7 +149,15 @@ func (t *Tree) NumFeatures() int {
 	}
 }
 
-// Scale scales the tree.
+// Leaves gets all the leaves of the tree.
+func (t *Tree) Leaves() []*Leaf {
+	if t.Leaf != nil {
+		return []*Leaf{t.Leaf}
+	}
+	return append(t.Branch.FalseBranch.Leaves(), t.Branch.TrueBranch.Leaves()...)
+}
+
+// Scale scales the leaf output deltas of the tree.
 func (t *Tree) Scale(s float32) {
 	if t.Leaf != nil {
 		for i, x := range t.Leaf.OutputDelta {
