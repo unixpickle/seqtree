@@ -212,7 +212,11 @@ func (h *hessianMatrix) ApplyInverse(v []float32) []float32 {
 	for i := 0; i < h.Dim; i++ {
 		residual := vectorDifference(v, h.Apply(x))
 		product := h.Apply(residual)
-		stepSize := vectorDot(residual, product) / vectorNormSquared(product)
+		divisor := vectorNormSquared(product)
+		if divisor == 0 {
+			break
+		}
+		stepSize := vectorDot(residual, product) / divisor
 		for j, y := range residual {
 			x[j] += stepSize * y
 		}

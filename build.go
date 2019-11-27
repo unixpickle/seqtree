@@ -76,6 +76,12 @@ type Builder struct {
 	// In the case of binary outputs, this uses a higher
 	// order polynomial.
 	HigherOrder bool
+
+	// HessianDamping is used in conjunction with
+	// HigherOrder to prevent large steps from being
+	// taken.
+	// A value of 1.0 is reasonable.
+	HessianDamping float32
 }
 
 // Build builds a tree greedily using all of the provided
@@ -450,6 +456,9 @@ func (b *Builder) computeLossSamples(samples []*TimestepSample) []lossSample {
 					} else {
 						grad := SoftmaxLossGrad(ts.Output, ts.Target)
 						hess := newHessianMatrixSoftmax(ts.Output, ts.Target)
+						for i := 0; i < hess.Dim; i++ {
+							hess.Values[i+i*hess.Dim] += b.HessianDamping
+						}
 						res[j].Vector = append(grad, hess.Values...)
 					}
 				} else {
