@@ -47,6 +47,22 @@ func vectorNormSquared(v []float32) float32 {
 	return res
 }
 
+func vectorDifference(v1, v2 []float32) []float32 {
+	res := make([]float32, len(v1))
+	for i, x := range v1 {
+		res[i] = x - v2[i]
+	}
+	return res
+}
+
+func vectorDot(v1, v2 []float32) float32 {
+	var res float32
+	for i, x := range v1 {
+		res += x * v2[i]
+	}
+	return res
+}
+
 type polynomial []float32
 
 // newPolynomialLogSigmoid approximates the log of the
@@ -170,4 +186,37 @@ func newHessianMatrixSoftmax(outputs, targets []float32) *hessianMatrix {
 	}
 
 	return res
+}
+
+func (h *hessianMatrix) Apply(v []float32) []float32 {
+	if len(v) != h.Dim {
+		panic("dimension mismatch")
+	}
+	res := make([]float32, h.Dim)
+	for i := 0; i < h.Dim; i++ {
+		rowIdx := i * h.Dim
+		for j := 0; j < h.Dim; j++ {
+			res[i] += h.Values[rowIdx+j] * v[j]
+		}
+	}
+	return res
+}
+
+// ApplyInverse solves the equation Hx = v for x.
+func (h *hessianMatrix) ApplyInverse(v []float32) []float32 {
+	x := make([]float32, len(v))
+
+	// Perform h.Dim steps of gradient descent.
+	// In the future, this should probably use CG or some
+	// more efficient method.
+	for i := 0; i < h.Dim; i++ {
+		residual := vectorDifference(v, h.Apply(x))
+		product := h.Apply(residual)
+		stepSize := vectorDot(residual, product) / vectorNormSquared(product)
+		for j, y := range residual {
+			x[j] += stepSize * y
+		}
+	}
+
+	return x
 }
