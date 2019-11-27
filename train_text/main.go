@@ -30,14 +30,13 @@ func main() {
 	essentials.Must(err)
 
 	builder := seqtree.Builder{
+		Heuristic:       seqtree.HessianHeuristic{Damping: 0.5},
 		Depth:           Depth,
 		Horizons:        Horizons,
 		MinSplitSamples: MinSplitSamples,
 		MaxSplitSamples: SplitBatch * Length,
 		MaxUnion:        MaxUnion,
 		CandidateSplits: CandidateSplits,
-		HigherOrder:     true,
-		HessianDamping:  0.5,
 	}
 
 	for i := 0; true; i++ {

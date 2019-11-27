@@ -52,13 +52,13 @@ func main() {
 	model.Load("model.json")
 
 	builder := seqtree.Builder{
+		Heuristic:             seqtree.PolynomialHeuristic{},
 		Depth:                 Depth,
 		Horizons:              horizons,
 		MaxSplitSamples:       MaxSplitSamples,
 		MaxUnion:              MaxUnion,
 		CandidateSplits:       CandidateSplits,
 		CandidatePruneSamples: CandidatePruneSamples,
-		HigherOrder:           true,
 	}
 
 	for i := 0; true; i++ {

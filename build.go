@@ -12,6 +12,10 @@ import (
 // A Builder stores parameters for building new trees on
 // top of a model.
 type Builder struct {
+	// Heuristic is used to find good splits and compute
+	// output nodes.
+	Heuristic Heuristic
+
 	// Depth is the maximum depth of the resulting trees.
 	Depth int
 
@@ -66,22 +70,6 @@ type Builder struct {
 	// Specifying this can prevent slowdowns as more and
 	// more features are added to the model.
 	ExtraFeatures int
-
-	// HigherOrder, if true, indicates that a higher-order
-	// approximation of the loss function should be used
-	// to choose optimal splits.
-	//
-	// In the general case, this uses a second order
-	// approximation of the loss function.
-	// In the case of binary outputs, this uses a higher
-	// order polynomial.
-	HigherOrder bool
-
-	// HessianDamping is used in conjunction with
-	// HigherOrder to prevent large steps from being
-	// taken.
-	// A value of 1.0 is reasonable.
-	HessianDamping float32
 }
 
 // Build builds a tree greedily using all of the provided
@@ -90,6 +78,9 @@ type Builder struct {
 func (b *Builder) Build(samples []*TimestepSample) *Tree {
 	if len(samples) == 0 {
 		panic("no data")
+	}
+	if b.Heuristic == nil {
+		panic("no heuristic was specified")
 	}
 	data := b.computeLossSamples(samples)
 	return b.build(data, b.Depth)
@@ -344,14 +335,13 @@ func (b *Builder) featureSplitQuality(falses, trues []lossSample, sums *lossSums
 	oldTrueCount := float32(len(trues)) * sampleFrac
 	effectiveTrueCount := float32(splitTrueCount) + oldTrueCount
 
-	numOutputs := len(falses[0].Timestep().Output)
-	newQuality := b.computeSplitQuality(newFalseSum, newTrueSum, float32(splitFalseCount),
-		effectiveTrueCount, numOutputs)
-	oldQuality := b.computeSplitQuality(sums.False, oldTrueSum, float32(len(falses)),
-		oldTrueCount, numOutputs)
+	newQuality := b.Heuristic.Quality(newFalseSum, float32(splitFalseCount)) +
+		b.Heuristic.Quality(newTrueSum, effectiveTrueCount)
+	oldQuality := b.Heuristic.Quality(sums.False, float32(len(falses))) +
+		b.Heuristic.Quality(oldTrueSum, oldTrueCount)
 
 	// Avoid numerically insignificant deltas.
-	minDelta := math.Abs(math.Min(float64(newQuality), float64(oldQuality))) * 1e-6
+	minDelta := math.Min(math.Abs(float64(newQuality)), math.Abs(float64(oldQuality))) * 1e-6
 	if math.Abs(float64(newQuality-oldQuality)) < minDelta {
 		return 0
 	}
@@ -390,29 +380,6 @@ func (b *Builder) minoritySum(samples []lossSample, values []bool, trueIsMinorit
 	return minoritySum.Sum()
 }
 
-func (b *Builder) computeSplitQuality(falses, trues []float32,
-	falseCount, trueCount float32, numOutputs int) float32 {
-	if b.HigherOrder {
-		if numOutputs == 2 {
-			poly1 := polynomial(falses)
-			min1 := b.minimizePolynomial(poly1)
-			poly2 := polynomial(trues)
-			min2 := b.minimizePolynomial(poly2)
-			return -(poly1.Evaluate(min1) + poly2.Evaluate(min2))
-		} else {
-			_, min1 := b.minimizeSecondOrder(falses, numOutputs)
-			_, min2 := b.minimizeSecondOrder(trues, numOutputs)
-			return -(min1 + min2)
-		}
-	}
-	if trueCount == 0 {
-		trueCount = 1
-	} else if falseCount == 0 {
-		falseCount = 1
-	}
-	return vectorNormSquared(falses)/falseCount + vectorNormSquared(trues)/trueCount
-}
-
 func (b *Builder) computeLossSamples(samples []*TimestepSample) []lossSample {
 	res := make([]lossSample, len(samples))
 
@@ -424,40 +391,8 @@ func (b *Builder) computeLossSamples(samples []*TimestepSample) []lossSample {
 			defer wg.Done()
 			for j := i; j < len(samples); j += numProcs {
 				sample := samples[j]
-				ts := sample.Timestep()
 				res[j].TimestepSample = *sample
-				if b.HigherOrder {
-					numOutputs := len(ts.Output)
-					if numOutputs == 2 {
-						poly := newPolynomialLogSigmoid(ts.Output[0] - ts.Output[1])
-						poly1 := newPolynomialLogSigmoid(ts.Output[1] - ts.Output[0])
-						for i, x := range poly {
-							poly[i] = -x * ts.Target[0]
-							if i%2 == 1 {
-								poly[i] += poly1[i] * ts.Target[1]
-							} else {
-								poly[i] -= poly1[i] * ts.Target[1]
-							}
-						}
-
-						// Getting rid of the constant term improves
-						// numerical accuracy without changing the
-						// objective
-						poly[0] = 0
-
-						res[j].Vector = poly
-					} else {
-						grad := SoftmaxLossGrad(ts.Output, ts.Target)
-						hess := newHessianMatrixSoftmax(ts.Output, ts.Target)
-						for i := 0; i < hess.Dim; i++ {
-							hess.Values[i+i*hess.Dim] += b.HessianDamping
-						}
-						res[j].Vector = append(grad, hess.Values...)
-					}
-				} else {
-					grad := SoftmaxLossGrad(ts.Output, ts.Target)
-					res[j].Vector = grad
-				}
+				res[j].Vector = b.Heuristic.SampleVector(sample)
 			}
 		}(i)
 	}
@@ -471,45 +406,7 @@ func (b *Builder) computeOutputDelta(samples []lossSample) []float32 {
 	for _, s := range samples {
 		sum.Add(s.Vector)
 	}
-	res := sum.Sum()
-
-	if b.HigherOrder {
-		numOutputs := len(samples[0].Timestep().Output)
-		if numOutputs == 2 {
-			x := b.minimizePolynomial(polynomial(res))
-			return []float32{-x, x}
-		} else {
-			solution, _ := b.minimizeSecondOrder(res, numOutputs)
-			for i := range solution {
-				solution[i] *= -1
-			}
-			return solution
-		}
-	}
-
-	for i, x := range res {
-		res[i] = x / float32(len(samples))
-	}
-	return res
-}
-
-func (b *Builder) minimizePolynomial(p polynomial) float32 {
-	return minimizeUnary(-1, 1, 30, p.Evaluate)
-}
-
-func (b *Builder) minimizeSecondOrder(data []float32, numOutputs int) ([]float32, float32) {
-	grad := data[:numOutputs]
-	hessian := &hessianMatrix{
-		Dim:    numOutputs,
-		Values: data[numOutputs:],
-	}
-	negGrad := make([]float32, len(grad))
-	for i, x := range grad {
-		negGrad[i] = -x
-	}
-	solution := hessian.ApplyInverse(negGrad)
-	value := vectorDot(grad, solution) + 0.5*vectorDot(solution, hessian.Apply(solution))
-	return solution, value
+	return b.Heuristic.LeafOutput(sum.Sum(), float32(len(samples)))
 }
 
 type lossSample struct {

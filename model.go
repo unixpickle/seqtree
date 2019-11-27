@@ -79,9 +79,9 @@ func (m *Model) EvaluateAll(seqs []Sequence) {
 }
 
 // Add adds a tree to the model, scaling it according to
-// the negative of stepSize.
+// the stepSize.
 func (m *Model) Add(t *Tree, stepSize float32) {
-	t.Scale(-stepSize)
+	t.Scale(stepSize)
 	m.Trees = append(m.Trees, t)
 	m.ExtraFeatures += t.NumFeatures()
 }

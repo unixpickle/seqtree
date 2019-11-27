@@ -30,7 +30,7 @@ func OptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32, iters in
 					outputDelta := outputDeltas[j]
 					ts := timesteps[j].Timestep()
 					for i, x := range ts.Output {
-						tmpOutput[i] = x - stepSize*outputDelta[i]
+						tmpOutput[i] = x + stepSize*outputDelta[i]
 					}
 					tmpAddition[0] = SoftmaxLoss(tmpOutput, ts.Target)
 					total.Add(tmpAddition)
@@ -79,7 +79,7 @@ func ScaleOptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32,
 					for j := i; j < len(samples); j += numProcs {
 						sample := samples[j]
 						for k, x := range sample.Output {
-							tmpOutput[k] = x - stepSize*leaf.OutputDelta[k]
+							tmpOutput[k] = x + stepSize*leaf.OutputDelta[k]
 						}
 						tmpAddition[0] = SoftmaxLoss(tmpOutput, sample.Target)
 						total.Add(tmpAddition)
@@ -117,7 +117,7 @@ func AvgLossDelta(timesteps []*TimestepSample, t *Tree, currentStep float32) flo
 				}
 				leaf := t.Evaluate(ts)
 				delta := SoftmaxLossDelta(ts.Timestep().Output, ts.Timestep().Target,
-					leaf.OutputDelta, -currentStep)
+					leaf.OutputDelta, currentStep)
 				deltaTotal.Add([]float32{delta})
 			}
 			lock.Lock()
