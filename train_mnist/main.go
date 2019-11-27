@@ -48,7 +48,7 @@ func main() {
 		}
 	}
 	dataset := mnist.LoadTrainingDataSet()
-	model := &seqtree.Model{BaseFeatures: 2 + ImageSize*2}
+	model := &seqtree.Model{BaseFeatures: 2 + ImageSize*4}
 	model.Load("model.json")
 
 	builder := seqtree.Builder{
@@ -119,8 +119,7 @@ func SampleSequences(ds mnist.DataSet, m *seqtree.Model, count int) []seqtree.Se
 					if prev != -1 {
 						ts.Features.Set(prev, true)
 					}
-					ts.Features.Set(2+x, true)
-					ts.Features.Set(2+ImageSize+y, true)
+					SetAxisFeatures(ts.Features, x, y)
 					if intensity > 0.5 {
 						prev = 1
 					} else {
@@ -150,8 +149,7 @@ func GenerateSequence(m *seqtree.Model) {
 			for i := 0; i < ImageSize; i++ {
 				for j := 0; j < ImageSize; j++ {
 					ts := seq[len(seq)-1]
-					ts.Features.Set(2+j, true)
-					ts.Features.Set(2+ImageSize+i, true)
+					SetAxisFeatures(ts.Features, j, i)
 					m.EvaluateAt(seq, len(seq)-1)
 					num := seqtree.SampleSoftmax(ts.Output)
 					if num == 1 {
@@ -171,4 +169,19 @@ func GenerateSequence(m *seqtree.Model) {
 	essentials.Must(err)
 	defer w.Close()
 	essentials.Must(png.Encode(w, img))
+}
+
+func SetAxisFeatures(f *seqtree.Bitmap, x, y int) {
+	SetAxisFeature(f, 2, x)
+	SetAxisFeature(f, 2+ImageSize*2, y)
+}
+
+func SetAxisFeature(f *seqtree.Bitmap, start, x int) {
+	for i := 0; i < ImageSize; i++ {
+		if i < x {
+			f.Set(i+start, true)
+		} else if i > x {
+			f.Set(i+start+ImageSize, true)
+		}
+	}
 }
