@@ -14,20 +14,21 @@ type Heuristic interface {
 	// Quality returns a scalar value indicating how much
 	// improvement is likely to be made on the samples if
 	// they are together in a leaf node.
-	// Higher values are better.
+	// Higher values mean more improvement, and zero means
+	// no improvement.
 	//
 	// This value should scale with the number of samples.
 	// For example, if leaf X contains a set of samples,
 	// and leaf Y contains the samples of leaf X repeated
 	// twice, then the quality of leaf Y should be roughly
 	// twice that of leaf X.
-	Quality(vectorSum []float32, count float32) float32
+	Quality(vectorSum []float32) float32
 
 	// LeafOutput takes aggregate statistics about the
 	// samples in a leaf node, and produces an output
 	// delta for the leaf that should decrease the loss as
 	// much as possible.
-	LeafOutput(vectorSum []float32, count float32) []float32
+	LeafOutput(vectorSum []float32) []float32
 }
 
 // GradientHeuristic is a Heuristic which implements basic
@@ -38,20 +39,22 @@ type GradientHeuristic struct{}
 
 func (g GradientHeuristic) SampleVector(sample *TimestepSample) []float32 {
 	ts := sample.Timestep()
-	return SoftmaxLossGrad(ts.Output, ts.Target)
+	return append([]float32{1}, SoftmaxLossGrad(ts.Output, ts.Target)...)
 }
 
-func (g GradientHeuristic) Quality(gradSum []float32, count float32) float32 {
+func (g GradientHeuristic) Quality(gradSum []float32) float32 {
+	count := gradSum[0]
 	if count == 0 {
 		return 0
 	}
-	return vectorNormSquared(gradSum) / count
+	return vectorNormSquared(gradSum[1:]) / count
 }
 
-func (g GradientHeuristic) LeafOutput(gradSum []float32, count float32) []float32 {
-	res := make([]float32, len(gradSum))
+func (g GradientHeuristic) LeafOutput(gradSum []float32) []float32 {
+	count := gradSum[0]
+	res := make([]float32, len(gradSum)-1)
 	s := -1 / count
-	for i, x := range gradSum {
+	for i, x := range gradSum[1:] {
 		res[i] = x * s
 	}
 	return res
@@ -80,15 +83,12 @@ func (h HessianHeuristic) SampleVector(sample *TimestepSample) []float32 {
 	return append(grad, hess.Values...)
 }
 
-func (h HessianHeuristic) Quality(sum []float32, count float32) float32 {
-	if count == 0 {
-		return 0
-	}
+func (h HessianHeuristic) Quality(sum []float32) float32 {
 	_, v := h.minimize(sum)
 	return -v
 }
 
-func (h HessianHeuristic) LeafOutput(sum []float32, count float32) []float32 {
+func (h HessianHeuristic) LeafOutput(sum []float32) []float32 {
 	v, _ := h.minimize(sum)
 	return v
 }
@@ -148,15 +148,12 @@ func (p PolynomialHeuristic) SampleVector(sample *TimestepSample) []float32 {
 	return poly
 }
 
-func (p PolynomialHeuristic) Quality(sum []float32, count float32) float32 {
-	if count == 0 {
-		return 0
-	}
+func (p PolynomialHeuristic) Quality(sum []float32) float32 {
 	_, y := p.minimize(sum)
 	return -y
 }
 
-func (p PolynomialHeuristic) LeafOutput(sum []float32, count float32) []float32 {
+func (p PolynomialHeuristic) LeafOutput(sum []float32) []float32 {
 	x, _ := p.minimize(sum)
 	return []float32{x, -x}
 }

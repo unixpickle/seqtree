@@ -330,15 +330,11 @@ func (b *Builder) featureSplitQuality(falses, trues []lossSample, sums *lossSums
 	oldTrueSum := make([]float32, len(newTrueSum))
 	for i, x := range sums.True {
 		newTrueSum[i] += x * sampleFrac
-		oldTrueSum[i] += x * sampleFrac
+		oldTrueSum[i] = x * sampleFrac
 	}
-	oldTrueCount := float32(len(trues)) * sampleFrac
-	effectiveTrueCount := float32(splitTrueCount) + oldTrueCount
 
-	newQuality := b.Heuristic.Quality(newFalseSum, float32(splitFalseCount)) +
-		b.Heuristic.Quality(newTrueSum, effectiveTrueCount)
-	oldQuality := b.Heuristic.Quality(sums.False, float32(len(falses))) +
-		b.Heuristic.Quality(oldTrueSum, oldTrueCount)
+	newQuality := b.Heuristic.Quality(newFalseSum) + b.Heuristic.Quality(newTrueSum)
+	oldQuality := b.Heuristic.Quality(sums.False) + b.Heuristic.Quality(oldTrueSum)
 
 	// Avoid numerically insignificant deltas.
 	minDelta := math.Min(math.Abs(float64(newQuality)), math.Abs(float64(oldQuality))) * 1e-6
@@ -406,7 +402,7 @@ func (b *Builder) computeOutputDelta(samples []lossSample) []float32 {
 	for _, s := range samples {
 		sum.Add(s.Vector)
 	}
-	return b.Heuristic.LeafOutput(sum.Sum(), float32(len(samples)))
+	return b.Heuristic.LeafOutput(sum.Sum())
 }
 
 type lossSample struct {
