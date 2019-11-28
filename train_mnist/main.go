@@ -31,9 +31,8 @@ const (
 	MinSplitSamplesMax = 1000
 
 	// Split with a small subset of the entire batch.
-	MaxSplitSamples       = 100 * ImageSize * ImageSize
-	CandidateSplits       = 20
-	CandidatePruneSamples = 500 * ImageSize * ImageSize
+	MaxSplitSamples = 100 * ImageSize * ImageSize
+	CandidateSplits = 20
 )
 
 func main() {
@@ -52,13 +51,12 @@ func main() {
 	model.Load("model.json")
 
 	builder := seqtree.Builder{
-		Heuristic:             seqtree.PolynomialHeuristic{},
-		Depth:                 Depth,
-		Horizons:              horizons,
-		MaxSplitSamples:       MaxSplitSamples,
-		MaxUnion:              MaxUnion,
-		CandidateSplits:       CandidateSplits,
-		CandidatePruneSamples: CandidatePruneSamples,
+		Heuristic:       seqtree.PolynomialHeuristic{},
+		Depth:           Depth,
+		Horizons:        horizons,
+		MaxSplitSamples: MaxSplitSamples,
+		MaxUnion:        MaxUnion,
+		CandidateSplits: CandidateSplits,
 	}
 
 	for i := 0; true; i++ {
@@ -73,9 +71,8 @@ func main() {
 
 		builder.MinSplitSamples = rand.Intn(MinSplitSamplesMax-MinSplitSamplesMin) +
 			MinSplitSamplesMin
-		builder.ExtraFeatures = model.ExtraFeatures
 		tree := builder.Build(seqtree.TimestepSamples(seqs))
-		seqtree.AddLeafFeatures(tree, model.NumFeatures())
+		// seqtree.AddLeafFeatures(tree, model.NumFeatures())
 
 		// Optimize step size on a different batch.
 		seqs = SampleSequences(dataset, model, Batch)

@@ -46,11 +46,6 @@ type Builder struct {
 	// may be tested, at negligible performance cost.
 	CandidateSplits int
 
-	// CandidatePruneSamples is the number of samples to
-	// test each candidate split on before testing it on
-	// the full dataset.
-	CandidatePruneSamples int
-
 	// MaxUnion is the maximum number of features to
 	// include in a union.
 	// The special value 0 is treated as 1, indicating
@@ -60,16 +55,6 @@ type Builder struct {
 	// Horizons specifies the steps in the past to look at
 	// features for splits.
 	Horizons []int
-
-	// ExtraFeatures, if non-zero, specifies the number of
-	// features at the end of the feature list which
-	// should be treated as second-class features and
-	// should be used only sometimes rather than all the
-	// time in splits.
-	//
-	// Specifying this can prevent slowdowns as more and
-	// more features are added to the model.
-	ExtraFeatures int
 }
 
 // Build builds a tree greedily using all of the provided
@@ -173,9 +158,6 @@ func (b *Builder) buildSubtree(union BranchFeatureUnion, falses, trues []lossSam
 func (b *Builder) optimalFeature(falses, trues []lossSample, f []BranchFeature) *BranchFeature {
 	sums := newLossSums(falses, trues)
 
-	pruneFalses, pruneFrac := subsampleLimit(falses, b.CandidatePruneSamples)
-	pruneSums := newLossSums(pruneFalses, trues)
-
 	var lock sync.Mutex
 	var bestFeature BranchFeature
 	var bestQuality float32
@@ -219,10 +201,7 @@ func (b *Builder) optimalFeature(falses, trues []lossSample, f []BranchFeature) 
 					return
 				}
 				feature := *fPtr
-				quality := b.featureSplitQuality(pruneFalses, trues, pruneSums, feature, pruneFrac)
-				if quality > 0 && len(pruneFalses) != len(falses) {
-					quality = b.featureSplitQuality(falses, trues, sums, feature, 1.0)
-				}
+				quality := b.featureSplitQuality(falses, trues, sums, feature, 1.0)
 				putResult(feature, quality)
 			}
 		}()
@@ -251,50 +230,191 @@ func (b *Builder) sortFeatures(falses, trues []lossSample, sampleFrac float32) [
 	if len(falses) == 0 {
 		panic("no data")
 	}
-	numFeatures := falses[0].Timestep().Features.Len()
-	sums := newLossSums(falses, trues)
 
-	var resultLock sync.Mutex
-	var features []BranchFeature
-	var qualities []float32
-
-	featureChan := make(chan BranchFeature, 10)
-	wg := sync.WaitGroup{}
-	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for f := range featureChan {
-				quality := b.featureSplitQuality(falses, trues, sums, f, sampleFrac)
-				if quality > 0 {
-					resultLock.Lock()
-					features = append(features, f)
-					qualities = append(qualities, quality)
-					resultLock.Unlock()
-				}
-			}
-		}()
+	totalSum := newLossSums(falses, trues)
+	for i, x := range totalSum.True {
+		totalSum.True[i] = x * sampleFrac
 	}
+	baseQuality := b.Heuristic.Quality(totalSum.False) + b.Heuristic.Quality(totalSum.True)
 
-	for _, horizon := range b.Horizons {
-		for i := -1; i < numFeatures; i++ {
-			if i >= numFeatures-b.ExtraFeatures {
-				prob := 1 / math.Sqrt(float64(b.ExtraFeatures))
-				if rand.Float64() > prob {
-					continue
-				}
+	counts := b.countFeatureOccurrences(falses)
+	usable, trueIsMinority := b.filterFeatures(counts, len(falses), len(trues), sampleFrac)
+	sums := b.sumMinorities(falses, counts, usable, trueIsMinority)
+
+	var resultingFeatures []BranchFeature
+	var resultingQualities []float32
+
+	for i, horizonSums := range sums {
+		horizon := b.Horizons[i]
+		for j, sum := range horizonSums {
+			feature := usable[i][j]
+			tIsMin := trueIsMinority[i][j]
+			majoritySum := make([]float32, len(sum.Sum()))
+			for k, x := range totalSum.False {
+				majoritySum[k] = x - sum.Sum()[k]
 			}
-			featureChan <- BranchFeature{Feature: i, StepsInPast: horizon}
+			trueSum, falseSum := sum.Sum(), majoritySum
+			if !tIsMin {
+				trueSum, falseSum = falseSum, trueSum
+			}
+			for k, x := range totalSum.True {
+				trueSum[k] += x
+			}
+			quality := b.Heuristic.Quality(trueSum) + b.Heuristic.Quality(falseSum) - baseQuality
+			if quality > 1e-6*baseQuality {
+				resultingQualities = append(resultingQualities, quality)
+				resultingFeatures = append(resultingFeatures, BranchFeature{
+					Feature:     feature,
+					StepsInPast: horizon,
+				})
+			}
 		}
 	}
-	close(featureChan)
+
+	essentials.VoodooSort(resultingQualities, func(i, j int) bool {
+		return resultingQualities[i] > resultingQualities[j]
+	}, resultingFeatures)
+
+	return resultingFeatures
+}
+
+func (b *Builder) countFeatureOccurrences(samples []lossSample) [][]int {
+	numFeatures := samples[0].Timestep().Features.Len() + 1
+	makeCounts := func() [][]int {
+		res := make([][]int, len(b.Horizons))
+		for i := range res {
+			res[i] = make([]int, numFeatures)
+		}
+		return res
+	}
+
+	var lock sync.Mutex
+	var wg sync.WaitGroup
+	sum := makeCounts()
+	numProcs := runtime.GOMAXPROCS(0)
+	for i := 0; i < numProcs; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			localCounts := makeCounts()
+			for j := i; j < len(samples); j += numProcs {
+				sample := samples[j]
+				for k, counts := range localCounts {
+					horizon := b.Horizons[k]
+					if horizon > sample.Index {
+						counts[0]++
+					} else {
+						ts := sample.Sequence[sample.Index-horizon]
+						for i := 1; i < numFeatures; i++ {
+							if ts.Features.Get(i - 1) {
+								counts[i]++
+							}
+						}
+					}
+				}
+			}
+			lock.Lock()
+			for i, counts := range localCounts {
+				for j, c := range counts {
+					sum[i][j] += c
+				}
+			}
+			lock.Unlock()
+		}(i)
+	}
 	wg.Wait()
 
-	essentials.VoodooSort(qualities, func(i, j int) bool {
-		return qualities[i] > qualities[j]
-	}, features)
+	return sum
+}
 
-	return features
+func (b *Builder) filterFeatures(counts [][]int, falseCount, trueCount int,
+	sampleFrac float32) ([][]int, [][]bool) {
+	var features [][]int
+	var trueIsMinority [][]bool
+	for _, horizonCounts := range counts {
+		var horizonFeatures []int
+		var horizonTrueIsMinority []bool
+		for i, n := range horizonCounts {
+			splitTrueCount := n
+			splitFalseCount := falseCount - splitTrueCount
+
+			approxTrues := float32(trueCount) + float32(splitTrueCount)/sampleFrac
+			approxFalses := float32(splitFalseCount) / sampleFrac
+
+			if splitFalseCount == 0 || splitTrueCount == 0 ||
+				int(approxTrues) < b.MinSplitSamples ||
+				int(approxFalses) < b.MinSplitSamples {
+				// The split is unlikely to be allowed.
+				continue
+			}
+
+			horizonFeatures = append(horizonFeatures, i-1)
+			horizonTrueIsMinority = append(horizonTrueIsMinority, splitTrueCount < splitFalseCount)
+		}
+		features = append(features, horizonFeatures)
+		trueIsMinority = append(trueIsMinority, horizonTrueIsMinority)
+	}
+	return features, trueIsMinority
+}
+
+func (b *Builder) sumMinorities(samples []lossSample, counts, features [][]int,
+	trueIsMinority [][]bool) [][]*kahanSum {
+	vecSize := len(samples[0].Vector)
+	makeSums := func() [][]*kahanSum {
+		res := make([][]*kahanSum, len(features))
+		for i, feats := range features {
+			res[i] = make([]*kahanSum, len(feats))
+			for j := range res[i] {
+				res[i][j] = newKahanSum(vecSize)
+			}
+		}
+		return res
+	}
+
+	var lock sync.Mutex
+	sum := makeSums()
+
+	numProcs := runtime.GOMAXPROCS(0)
+	var wg sync.WaitGroup
+	for i := 0; i < numProcs; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			localSum := makeSums()
+			for j := i; j < len(samples); j += numProcs {
+				sample := samples[j]
+				for k, horizonFeatures := range features {
+					horizon := b.Horizons[k]
+					if horizon > sample.Index {
+						for l, f := range horizonFeatures {
+							trueValue := f == -1
+							if trueValue == trueIsMinority[k][l] {
+								localSum[k][l].Add(sample.Vector)
+							}
+						}
+					} else {
+						ts := sample.Sequence[sample.Index-horizon]
+						for l, f := range horizonFeatures {
+							trueValue := f >= 0 && ts.Features.Get(f)
+							if trueValue == trueIsMinority[k][l] {
+								localSum[k][l].Add(sample.Vector)
+							}
+						}
+					}
+				}
+			}
+			lock.Lock()
+			for i, x := range localSum {
+				for j, s := range x {
+					sum[i][j].Add(s.Sum())
+				}
+			}
+			lock.Unlock()
+		}(i)
+	}
+	wg.Wait()
+
+	return sum
 }
 
 // featureSplitQuality evaluates a given split.

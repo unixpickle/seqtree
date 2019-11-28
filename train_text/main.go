@@ -48,9 +48,8 @@ func main() {
 			loss += seq.MeanLoss()
 		}
 
-		builder.ExtraFeatures = model.ExtraFeatures
 		tree := builder.Build(seqtree.TimestepSamples(seqs))
-		seqtree.AddLeafFeatures(tree, model.NumFeatures())
+		// seqtree.AddLeafFeatures(tree, model.NumFeatures())
 
 		seqs = SampleSequences(textData, model, Batch, Length)
 		model.EvaluateAll(seqs)
