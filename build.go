@@ -358,14 +358,23 @@ func (b *Builder) filterFeatures(counts [][]int, falseCount, trueCount int,
 }
 
 func (b *Builder) sumMinorities(samples []lossSample, counts, features [][]int,
-	trueIsMinority [][]bool) [][]*kahanSum {
+	trueIsMinority [][]bool) [][]kahanSum {
 	vecSize := len(samples[0].Vector)
-	makeSums := func() [][]*kahanSum {
-		res := make([][]*kahanSum, len(features))
+	makeSums := func() [][]kahanSum {
+		bufSize := 0
+		for _, f := range features {
+			bufSize += len(f) * vecSize * 2
+		}
+		buf := make([]float32, bufSize)
+		res := make([][]kahanSum, len(features))
 		for i, feats := range features {
-			res[i] = make([]*kahanSum, len(feats))
+			res[i] = make([]kahanSum, len(feats))
 			for j := range res[i] {
-				res[i][j] = newKahanSum(vecSize)
+				res[i][j] = kahanSum{
+					sum:          buf[:vecSize],
+					compensation: buf[vecSize : vecSize*2],
+				}
+				buf = buf[vecSize*2:]
 			}
 		}
 		return res
