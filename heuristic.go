@@ -35,11 +35,13 @@ type Heuristic interface {
 // gradient boosting. Outputs are based on gradients, and
 // quality is based on fitting the functional gradient in
 // terms of mean squared error.
-type GradientHeuristic struct{}
+type GradientHeuristic struct {
+	Loss GradLossFunc
+}
 
 func (g GradientHeuristic) SampleVector(sample *TimestepSample) []float32 {
 	ts := sample.Timestep()
-	return append([]float32{1}, Softmax{}.LossGrad(ts.Output, ts.Target)...)
+	return append([]float32{1}, g.Loss.LossGrad(ts.Output, ts.Target)...)
 }
 
 func (g GradientHeuristic) Quality(gradSum []float32) float32 {
@@ -64,6 +66,8 @@ func (g GradientHeuristic) LeafOutput(gradSum []float32) []float32 {
 // quadratic approximation of the loss function for every
 // leaf node.
 type HessianHeuristic struct {
+	Loss HessianLossFunc
+
 	// Damping is the L2 penalty applied to the output
 	// delta.
 	//
@@ -76,11 +80,11 @@ type HessianHeuristic struct {
 func (h HessianHeuristic) SampleVector(sample *TimestepSample) []float32 {
 	ts := sample.Timestep()
 	grad := Softmax{}.LossGrad(ts.Output, ts.Target)
-	hess := newHessianMatrixSoftmax(ts.Output, ts.Target)
+	hess := h.Loss.LossHessian(ts.Output, ts.Target)
 	for i := 0; i < hess.Dim; i++ {
-		hess.Values[i+i*hess.Dim] += h.Damping
+		hess.Data[i+i*hess.Dim] += h.Damping
 	}
-	return append(grad, hess.Values...)
+	return append(grad, hess.Data...)
 }
 
 func (h HessianHeuristic) Quality(sum []float32) float32 {
@@ -96,9 +100,9 @@ func (h HessianHeuristic) LeafOutput(sum []float32) []float32 {
 func (h HessianHeuristic) minimize(sum []float32) ([]float32, float32) {
 	dim := h.inferDimension(len(sum))
 	grad := sum[:dim]
-	hessian := &hessianMatrix{
-		Dim:    dim,
-		Values: sum[dim:],
+	hessian := &Hessian{
+		Dim:  dim,
+		Data: sum[dim:],
 	}
 	negGrad := make([]float32, len(grad))
 	for i, x := range grad {

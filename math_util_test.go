@@ -41,10 +41,10 @@ func TestHessianMatrixSoftmax(t *testing.T) {
 					logits[i] = float32(rand.NormFloat64())
 					targets[i] = float32(rand.NormFloat64())
 				}
-				actual := newHessianMatrixSoftmax(logits, targets)
+				actual := Softmax{}.LossHessian(logits, targets)
 				expected := approxHessianMatrixSoftmax(logits, targets)
-				for i, x := range expected.Values {
-					a := actual.Values[i]
+				for i, x := range expected.Data {
+					a := actual.Data[i]
 					if math.IsNaN(float64(a)) {
 						t.Fatal("got NaN")
 					} else if math.Abs(float64(a-x)) > 1e-3 {
@@ -56,11 +56,11 @@ func TestHessianMatrixSoftmax(t *testing.T) {
 	}
 }
 
-func approxHessianMatrixSoftmax(logits, targets []float32) *hessianMatrix {
+func approxHessianMatrixSoftmax(logits, targets []float32) *Hessian {
 	const epsilon = 1e-3
-	res := &hessianMatrix{
-		Dim:    len(logits),
-		Values: make([]float32, len(logits)*len(logits)),
+	res := &Hessian{
+		Dim:  len(logits),
+		Data: make([]float32, len(logits)*len(logits)),
 	}
 	for i := range logits {
 		l1 := append([]float32{}, logits...)
@@ -69,7 +69,7 @@ func approxHessianMatrixSoftmax(logits, targets []float32) *hessianMatrix {
 		l1[i] += epsilon * 2
 		g2 := Softmax{}.LossGrad(l1, targets)
 		for j := range logits {
-			res.Values[i+j*len(logits)] = (g2[j] - g1[j]) / (epsilon * 2)
+			res.Data[i+j*len(logits)] = (g2[j] - g1[j]) / (epsilon * 2)
 		}
 	}
 	return res

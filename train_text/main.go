@@ -30,7 +30,10 @@ func main() {
 	essentials.Must(err)
 
 	builder := seqtree.Builder{
-		Heuristic:       seqtree.HessianHeuristic{Damping: 0.5},
+		Heuristic: seqtree.HessianHeuristic{
+			Damping: 0.5,
+			Loss:    seqtree.Softmax{},
+		},
 		Depth:           Depth,
 		Horizons:        Horizons,
 		MinSplitSamples: MinSplitSamples,
