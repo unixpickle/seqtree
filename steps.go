@@ -7,7 +7,8 @@ import (
 
 // OptimalStep performs a line search to find a step size
 // that minimizes the loss.
-func OptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32, iters int) float32 {
+func OptimalStep(timesteps []*TimestepSample, t *Tree, l LossFunc, maxStep float32,
+	iters int) float32 {
 	outputDeltas := make([][]float32, len(timesteps))
 	for i, ts := range timesteps {
 		outputDeltas[i] = t.Evaluate(ts).OutputDelta
@@ -32,7 +33,7 @@ func OptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32, iters in
 					for i, x := range ts.Output {
 						tmpOutput[i] = x + stepSize*outputDelta[i]
 					}
-					tmpAddition[0] = SoftmaxLoss(tmpOutput, ts.Target)
+					tmpAddition[0] = l.Loss(tmpOutput, ts.Target)
 					total.Add(tmpAddition)
 				}
 				lock.Lock()
@@ -52,7 +53,7 @@ func OptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32, iters in
 // The minLeafSamples argument is the minimum number of
 // representative samples a leaf must have in order to be
 // scaled.
-func ScaleOptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32,
+func ScaleOptimalStep(timesteps []*TimestepSample, t *Tree, l LossFunc, maxStep float32,
 	minLeafSamples, iters int) {
 	leafToSample := map[*Leaf][]*Timestep{}
 	for _, ts := range timesteps {
@@ -81,7 +82,7 @@ func ScaleOptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32,
 						for k, x := range sample.Output {
 							tmpOutput[k] = x + stepSize*leaf.OutputDelta[k]
 						}
-						tmpAddition[0] = SoftmaxLoss(tmpOutput, sample.Target)
+						tmpAddition[0] = l.Loss(tmpOutput, sample.Target)
 						total.Add(tmpAddition)
 					}
 					lock.Lock()
@@ -100,7 +101,7 @@ func ScaleOptimalStep(timesteps []*TimestepSample, t *Tree, maxStep float32,
 
 // AvgLossDelta computes the average change in the loss
 // after taking a step.
-func AvgLossDelta(timesteps []*TimestepSample, t *Tree, currentStep float32) float32 {
+func AvgLossDelta(timesteps []*TimestepSample, t *Tree, l LossFunc, step float32) float32 {
 	var lock sync.Mutex
 	var currentDelta float32
 
@@ -116,9 +117,10 @@ func AvgLossDelta(timesteps []*TimestepSample, t *Tree, currentStep float32) flo
 					continue
 				}
 				leaf := t.Evaluate(ts)
-				delta := SoftmaxLossDelta(ts.Timestep().Output, ts.Timestep().Target,
-					leaf.OutputDelta, currentStep)
-				deltaTotal.Add([]float32{delta})
+				oldLoss := l.Loss(ts.Timestep().Output, ts.Timestep().Target)
+				newOut := addDelta(ts.Timestep().Output, leaf.OutputDelta, step)
+				newLoss := l.Loss(newOut, ts.Timestep().Target)
+				deltaTotal.Add([]float32{newLoss - oldLoss})
 			}
 			lock.Lock()
 			currentDelta += deltaTotal.Sum()[0]

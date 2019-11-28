@@ -65,7 +65,7 @@ func main() {
 
 		totalLoss := float32(0)
 		for _, seq := range seqs {
-			totalLoss += seq.MeanLoss()
+			totalLoss += seq.MeanLoss(seqtree.Softmax{})
 		}
 		totalLoss /= Batch
 
@@ -78,8 +78,9 @@ func main() {
 		seqs = SampleSequences(dataset, model, Batch)
 		model.EvaluateAll(seqs)
 
-		seqtree.ScaleOptimalStep(seqtree.TimestepSamples(seqs), tree, MaxStep, 10, 30)
-		delta := seqtree.AvgLossDelta(seqtree.TimestepSamples(seqs), tree, 1.0)
+		seqtree.ScaleOptimalStep(seqtree.TimestepSamples(seqs), tree, seqtree.Softmax{},
+			MaxStep, 10, 30)
+		delta := seqtree.AvgLossDelta(seqtree.TimestepSamples(seqs), tree, seqtree.Softmax{}, 1.0)
 		model.Add(tree, 1.0)
 
 		log.Printf("step %d: loss=%f loss_delta=%f min_leaf=%d",
@@ -149,7 +150,7 @@ func GenerateSequence(m *seqtree.Model) {
 					ts := seq[len(seq)-1]
 					SetAxisFeatures(ts.Features, j, i)
 					m.EvaluateAt(seq, len(seq)-1)
-					num := seqtree.SampleSoftmax(ts.Output)
+					num := seqtree.Softmax{}.Sample(ts.Output)
 					if num == 1 {
 						img.SetGray(row*ImageSize+j, col*ImageSize+i, color.Gray{Y: 255})
 					}

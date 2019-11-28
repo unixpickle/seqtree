@@ -45,7 +45,7 @@ func main() {
 
 		var loss float32
 		for _, seq := range seqs {
-			loss += seq.MeanLoss()
+			loss += seq.MeanLoss(seqtree.Softmax{})
 		}
 
 		tree := builder.Build(seqtree.TimestepSamples(seqs))
@@ -53,8 +53,9 @@ func main() {
 
 		seqs = SampleSequences(textData, model, Batch, Length)
 		model.EvaluateAll(seqs)
-		seqtree.ScaleOptimalStep(seqtree.TimestepSamples(seqs), tree, MaxStep, 10, 30)
-		delta := seqtree.AvgLossDelta(seqtree.TimestepSamples(seqs), tree, 1.0)
+		seqtree.ScaleOptimalStep(seqtree.TimestepSamples(seqs), tree, seqtree.Softmax{},
+			MaxStep, 10, 30)
+		delta := seqtree.AvgLossDelta(seqtree.TimestepSamples(seqs), tree, seqtree.Softmax{}, 1.0)
 		model.Add(tree, 1.0)
 
 		log.Printf("step %d: loss=%f loss_delta=%f", i, loss/Batch, -delta)
@@ -89,7 +90,7 @@ func GenerateSequence(m *seqtree.Model, length int) {
 	res := []byte{}
 	for i := 0; i < length; i++ {
 		m.EvaluateAt(seq, len(seq)-1)
-		num := seqtree.SampleSoftmax(seq[len(seq)-1].Output)
+		num := seqtree.Softmax{}.Sample(seq[len(seq)-1].Output)
 		res = append(res, byte(num))
 		ts := &seqtree.Timestep{
 			Output:   make([]float32, 128),

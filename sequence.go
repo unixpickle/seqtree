@@ -30,10 +30,10 @@ func MakeOneHotSequence(seq []int, outputSize, numFeatures int) Sequence {
 type Sequence []*Timestep
 
 // MeanLoss computes the mean loss for the sequence.
-func (s Sequence) MeanLoss() float32 {
+func (s Sequence) MeanLoss(l LossFunc) float32 {
 	var total float32
 	for _, t := range s {
-		total += SoftmaxLoss(t.Output, t.Target)
+		total += l.Loss(t.Output, t.Target)
 	}
 	return total / float32(len(s))
 }

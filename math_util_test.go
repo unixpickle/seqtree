@@ -65,9 +65,9 @@ func approxHessianMatrixSoftmax(logits, targets []float32) *hessianMatrix {
 	for i := range logits {
 		l1 := append([]float32{}, logits...)
 		l1[i] -= epsilon
-		g1 := SoftmaxLossGrad(l1, targets)
+		g1 := Softmax{}.LossGrad(l1, targets)
 		l1[i] += epsilon * 2
-		g2 := SoftmaxLossGrad(l1, targets)
+		g2 := Softmax{}.LossGrad(l1, targets)
 		for j := range logits {
 			res.Values[i+j*len(logits)] = (g2[j] - g1[j]) / (epsilon * 2)
 		}

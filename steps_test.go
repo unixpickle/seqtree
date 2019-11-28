@@ -21,14 +21,14 @@ func TestOptimalStep(t *testing.T) {
 				ts := TimestepSamples(generateTestSequences(m))
 				tree := b.Build(ts)
 
-				actual := OptimalStep(ts, tree, 40.0, 100)
-				actualLoss := AvgLossDelta(ts, tree, actual)
+				actual := OptimalStep(ts, tree, Softmax{}, 40.0, 100)
+				actualLoss := AvgLossDelta(ts, tree, Softmax{}, actual)
 				expected := bruteForceOptimalStep(ts, tree, 5, 0, 40.0)
-				expectedLoss := AvgLossDelta(ts, tree, expected)
+				expectedLoss := AvgLossDelta(ts, tree, Softmax{}, expected)
 				if math.Abs(float64(actualLoss-expectedLoss)) > 1e-4 {
 					t.Errorf("actual step is %f (loss=%f), expected is %f (loss=%f)",
-						actual, AvgLossDelta(ts, tree, actual),
-						expected, AvgLossDelta(ts, tree, expected))
+						actual, AvgLossDelta(ts, tree, Softmax{}, actual),
+						expected, AvgLossDelta(ts, tree, Softmax{}, expected))
 				}
 			}
 		})
@@ -56,7 +56,7 @@ func BenchmarkOptimalStep(b *testing.B) {
 				b.StartTimer()
 
 				for j := 0; j < b.N; j++ {
-					OptimalStep(ts, tree, 40.0, 100)
+					OptimalStep(ts, tree, Softmax{}, 40.0, 100)
 				}
 			}
 		})
@@ -68,7 +68,7 @@ func bruteForceOptimalStep(ts []*TimestepSample, t *Tree, stepsLeft int, min, ma
 	var minStep float32
 	for i := 0; i <= 1000; i++ {
 		s := (max-min)*float32(i)/1000 + min
-		delta := AvgLossDelta(ts, t, s)
+		delta := AvgLossDelta(ts, t, Softmax{}, s)
 		if delta < minimum {
 			minimum = delta
 			minStep = s

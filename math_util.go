@@ -47,6 +47,14 @@ func vectorNormSquared(v []float32) float32 {
 	return res
 }
 
+func addDelta(v1, v2 []float32, scale float32) []float32 {
+	res := make([]float32, len(v1))
+	for i, x := range v1 {
+		res[i] = x + v2[i]*scale
+	}
+	return res
+}
+
 func vectorDifference(v1, v2 []float32) []float32 {
 	res := make([]float32, len(v1))
 	for i, x := range v1 {

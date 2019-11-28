@@ -23,9 +23,9 @@ func TestSoftmaxLoss(t *testing.T) {
 				}
 			}
 		}
-		actual := SoftmaxLoss(vec, target)
+		actual := Softmax{}.Loss(vec, target)
 		expected := float32(0)
-		log := logSoftmax(vec)
+		log := Softmax{}.logSoftmax(vec)
 		for i, l := range log {
 			expected -= l * target[i]
 		}
@@ -40,7 +40,7 @@ func BenchmarkSoftmaxLoss(b *testing.B) {
 		params := []float32{-0.5, 0.7}
 		targets := []float32{0.2, 0.3}
 		for i := 0; i < b.N; i++ {
-			SoftmaxLoss(params, targets)
+			Softmax{}.Loss(params, targets)
 		}
 	})
 	b.Run("Size10", func(b *testing.B) {
@@ -51,25 +51,13 @@ func BenchmarkSoftmaxLoss(b *testing.B) {
 			targets[i] = float32(rand.NormFloat64())
 		}
 		for i := 0; i < b.N; i++ {
-			SoftmaxLoss(params, targets)
+			Softmax{}.Loss(params, targets)
 		}
 	})
 }
 
 func BenchmarkSoftmaxLossGrad(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		SoftmaxLossGrad([]float32{1.5, -0.3}, []float32{1.0, 0})
-	}
-}
-
-func BenchmarkSoftmaxLossDelta(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		SoftmaxLossDelta([]float32{1.5, -0.3}, []float32{1.0, 0}, []float32{0.5, -0.2}, 0.1)
-	}
-}
-
-func BenchmarkSoftmaxLossKL(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		SoftmaxLossKL([]float32{1.5, -0.3}, []float32{0.5, -0.2}, 0.1)
+		Softmax{}.LossGrad([]float32{1.5, -0.3}, []float32{1.0, 0})
 	}
 }

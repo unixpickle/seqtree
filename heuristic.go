@@ -39,7 +39,7 @@ type GradientHeuristic struct{}
 
 func (g GradientHeuristic) SampleVector(sample *TimestepSample) []float32 {
 	ts := sample.Timestep()
-	return append([]float32{1}, SoftmaxLossGrad(ts.Output, ts.Target)...)
+	return append([]float32{1}, Softmax{}.LossGrad(ts.Output, ts.Target)...)
 }
 
 func (g GradientHeuristic) Quality(gradSum []float32) float32 {
@@ -75,7 +75,7 @@ type HessianHeuristic struct {
 
 func (h HessianHeuristic) SampleVector(sample *TimestepSample) []float32 {
 	ts := sample.Timestep()
-	grad := SoftmaxLossGrad(ts.Output, ts.Target)
+	grad := Softmax{}.LossGrad(ts.Output, ts.Target)
 	hess := newHessianMatrixSoftmax(ts.Output, ts.Target)
 	for i := 0; i < hess.Dim; i++ {
 		hess.Values[i+i*hess.Dim] += h.Damping
