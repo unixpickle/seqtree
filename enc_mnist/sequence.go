@@ -1,96 +1,109 @@
 package main
 
 import (
+	"encoding/json"
+	"io/ioutil"
+	"os"
+
+	"github.com/pkg/errors"
 	"github.com/unixpickle/seqtree"
 )
 
 type SequenceModel struct {
-	Model *seqtree.Model
+	Models []*seqtree.Model
 }
 
 func NewSequenceModel() *SequenceModel {
-	return &SequenceModel{Model: &seqtree.Model{BaseFeatures: EncodingDim + EncodingOptions}}
+	res := &SequenceModel{}
+	for i := 0; i < EncodingDim; i++ {
+		res.Models = append(res.Models, &seqtree.Model{
+			BaseFeatures: i * EncodingOptions,
+		})
+	}
+	return res
+}
+
+func (s *SequenceModel) Save(path string) error {
+	data, err := json.Marshal(s)
+	if err != nil {
+		return errors.Wrap(err, "save model")
+	}
+	if err := ioutil.WriteFile(path, data, 0755); err != nil {
+		return errors.Wrap(err, "save model")
+	}
+	return nil
+}
+
+func (s *SequenceModel) Load(path string) error {
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return errors.Wrap(err, "load model")
+	}
+	if err := json.Unmarshal(data, s); err != nil {
+		return errors.Wrap(err, "load model")
+	}
+	return nil
+}
+
+func (s *SequenceModel) NumTrees() int {
+	return len(s.Models[1].Trees)
 }
 
 func (s *SequenceModel) Sample() []int {
-	seq := seqtree.Sequence{
-		&seqtree.Timestep{
-			Output:   make([]float32, EncodingOptions),
-			Features: seqtree.NewBitmap(s.Model.NumFeatures()),
-		},
-	}
 	var sample []int
-	for i := 0; i < EncodingDim; i++ {
-		ts := seq[len(seq)-1]
-		ts.Features.Set(EncodingOptions+i, true)
-		s.Model.EvaluateAt(seq, len(seq)-1)
+	for _, model := range s.Models {
+		ts := s.sampleTimestep(model, sample)
 		idx := seqtree.Softmax{}.Sample(ts.Output)
 		sample = append(sample, idx)
-		ts = &seqtree.Timestep{
-			Output:   make([]float32, EncodingOptions),
-			Features: seqtree.NewBitmap(s.Model.NumFeatures()),
-		}
-		ts.Features.Set(idx, true)
-		seq = append(seq, ts)
 	}
 	return sample
 }
 
 func (s *SequenceModel) AddTree(intSeqs [][]int) (loss, delta float32) {
-	seqs := s.sequences(intSeqs)
-	s.Model.EvaluateAll(seqs)
-	firstSeqs := seqs[:len(seqs)/2]
-	secondSeqs := seqs[len(seqs)/2:]
+	for _, model := range s.Models {
+		seqs := make([]seqtree.Sequence, len(intSeqs))
+		for i, intSeq := range intSeqs {
+			seqs[i] = seqtree.Sequence{s.sampleTimestep(model, intSeq)}
+		}
+		model.EvaluateAll(seqs)
+		firstSeqs := seqs[:len(seqs)/2]
+		secondSeqs := seqs[len(seqs)/2:]
 
-	for _, seq := range seqs {
-		loss += seq.MeanLoss(seqtree.Softmax{})
+		for _, seq := range seqs {
+			loss += seq.MeanLoss(seqtree.Softmax{})
+		}
+		loss /= float32(len(seqs))
+
+		builder := seqtree.Builder{
+			Heuristic: seqtree.HessianHeuristic{
+				Damping: 0.1,
+				Loss:    seqtree.Softmax{},
+			},
+			Depth:    4,
+			Horizons: []int{0},
+			MaxUnion: 5,
+		}
+		tree := builder.Build(seqtree.TimestepSamples(firstSeqs))
+		seqtree.ScaleOptimalStep(seqtree.TimestepSamples(secondSeqs), tree, seqtree.Softmax{},
+			40.0, 10, 30)
+		delta = seqtree.AvgLossDelta(seqtree.TimestepSamples(secondSeqs), tree, seqtree.Softmax{}, 1.0)
+		model.Add(tree, 1.0)
 	}
-	loss /= float32(len(seqs))
-
-	horizons := make([]int, EncodingDim)
-	for i := range horizons {
-		horizons[i] = i
-	}
-
-	builder := seqtree.Builder{
-		Heuristic: seqtree.HessianHeuristic{
-			Damping: 0.1,
-			Loss:    seqtree.Softmax{},
-		},
-		Depth:           4,
-		Horizons:        horizons,
-		MinSplitSamples: len(seqs) / 1000,
-		MaxUnion:        5,
-	}
-	tree := builder.Build(seqtree.TimestepSamples(firstSeqs))
-	seqtree.ScaleOptimalStep(seqtree.TimestepSamples(secondSeqs), tree, seqtree.Softmax{},
-		40.0, 10, 30)
-	delta = seqtree.AvgLossDelta(seqtree.TimestepSamples(secondSeqs), tree, seqtree.Softmax{}, 1.0)
-	s.Model.Add(tree, 1.0)
-
 	return
 }
 
-func (s *SequenceModel) sequences(seqs [][]int) []seqtree.Sequence {
-	res := make([]seqtree.Sequence, len(seqs))
-	for i, intSeq := range seqs {
-		seq := seqtree.Sequence{}
-		prev := -1
-		for j, x := range intSeq {
-			ts := &seqtree.Timestep{
-				Output:   make([]float32, EncodingOptions),
-				Features: seqtree.NewBitmap(s.Model.NumFeatures()),
-				Target:   make([]float32, EncodingOptions),
-			}
-			if prev != -1 {
-				ts.Features.Set(prev, true)
-			}
-			ts.Features.Set(EncodingOptions+j, true)
-			prev = x
-			ts.Target[prev] = 1
-			seq = append(seq, ts)
-		}
-		res[i] = seq
+func (s *SequenceModel) sampleTimestep(model *seqtree.Model, seq []int) *seqtree.Timestep {
+	numPrefix := model.BaseFeatures / EncodingOptions
+	ts := &seqtree.Timestep{
+		Features: seqtree.NewBitmap(model.NumFeatures()),
+		Output:   make([]float32, EncodingOptions),
+		Target:   make([]float32, EncodingOptions),
 	}
-	return res
+	for i, s := range seq[:numPrefix] {
+		ts.Features.Set(i*EncodingOptions+s, true)
+	}
+	return ts
 }
