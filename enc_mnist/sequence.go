@@ -75,7 +75,6 @@ func (s *SequenceModel) AddTree(intSeqs [][]int) (loss, delta float32) {
 		for _, seq := range seqs {
 			loss += seq.MeanLoss(seqtree.Softmax{})
 		}
-		loss /= float32(len(seqs))
 
 		builder := seqtree.Builder{
 			Heuristic: seqtree.HessianHeuristic{
@@ -92,6 +91,7 @@ func (s *SequenceModel) AddTree(intSeqs [][]int) (loss, delta float32) {
 		delta = seqtree.AvgLossDelta(seqtree.TimestepSamples(secondSeqs), tree, seqtree.Softmax{}, 1.0)
 		model.Add(tree, 1.0)
 	}
+	loss /= float32(len(intSeqs))
 	return
 }
 
