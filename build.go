@@ -241,35 +241,70 @@ func (b *Builder) sortFeatures(falses, trues []lossSample, sampleFrac float32) [
 	usable, trueIsMinority := b.filterFeatures(counts, len(falses), len(trues), sampleFrac)
 	sums := b.sumMinorities(falses, counts, usable, trueIsMinority)
 
+	var lock sync.Mutex
+	var horizonIdx, featureIdx int
+	getNext := func() (int, int, bool) {
+		lock.Lock()
+		defer lock.Unlock()
+		if horizonIdx >= len(sums) {
+			return 0, 0, false
+		}
+		for featureIdx >= len(sums[horizonIdx]) {
+			horizonIdx++
+			featureIdx = 0
+			if horizonIdx == len(sums) {
+				return 0, 0, false
+			}
+		}
+		f := featureIdx
+		featureIdx++
+		return horizonIdx, f, true
+	}
+
+	var resultLock sync.Mutex
 	var resultingFeatures []BranchFeature
 	var resultingQualities []float32
 
-	for i, horizonSums := range sums {
-		horizon := b.Horizons[i]
-		for j, sum := range horizonSums {
-			feature := usable[i][j]
-			tIsMin := trueIsMinority[i][j]
-			majoritySum := make([]float32, len(sum.Sum()))
-			for k, x := range totalSum.False {
-				majoritySum[k] = x - sum.Sum()[k]
+	var wg sync.WaitGroup
+	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				i, j, more := getNext()
+				if !more {
+					return
+				}
+				horizon := b.Horizons[i]
+				feature := usable[i][j]
+				sum := sums[i][j].Sum()
+				tIsMin := trueIsMinority[i][j]
+
+				majoritySum := make([]float32, len(sum))
+				for k, x := range totalSum.False {
+					majoritySum[k] = x - sum[k]
+				}
+				trueSum, falseSum := sum, majoritySum
+				if !tIsMin {
+					trueSum, falseSum = falseSum, trueSum
+				}
+				for k, x := range totalSum.True {
+					trueSum[k] += x
+				}
+				quality := b.Heuristic.Quality(trueSum) + b.Heuristic.Quality(falseSum) - baseQuality
+				if quality > 1e-6*baseQuality {
+					resultLock.Lock()
+					resultingQualities = append(resultingQualities, quality)
+					resultingFeatures = append(resultingFeatures, BranchFeature{
+						Feature:     feature,
+						StepsInPast: horizon,
+					})
+					resultLock.Unlock()
+				}
 			}
-			trueSum, falseSum := sum.Sum(), majoritySum
-			if !tIsMin {
-				trueSum, falseSum = falseSum, trueSum
-			}
-			for k, x := range totalSum.True {
-				trueSum[k] += x
-			}
-			quality := b.Heuristic.Quality(trueSum) + b.Heuristic.Quality(falseSum) - baseQuality
-			if quality > 1e-6*baseQuality {
-				resultingQualities = append(resultingQualities, quality)
-				resultingFeatures = append(resultingFeatures, BranchFeature{
-					Feature:     feature,
-					StepsInPast: horizon,
-				})
-			}
-		}
+		}()
 	}
+	wg.Wait()
 
 	essentials.VoodooSort(resultingQualities, func(i, j int) bool {
 		return resultingQualities[i] > resultingQualities[j]
