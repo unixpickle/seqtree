@@ -105,7 +105,7 @@ func (s *SequenceModel) sampleTimestep(model *seqtree.Model, seq []int) *seqtree
 	for i, s := range seq[:numPrefix] {
 		ts.Features.Set(i*EncodingOptions+s, true)
 	}
-	if len(seq) >= numPrefix {
+	if len(seq) > numPrefix {
 		ts.Target[seq[numPrefix]] = 1
 	}
 	return ts
