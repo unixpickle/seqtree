@@ -88,7 +88,8 @@ func (s *SequenceModel) AddTree(intSeqs [][]int) (loss, delta float32) {
 		tree := builder.Build(seqtree.TimestepSamples(firstSeqs))
 		seqtree.ScaleOptimalStep(seqtree.TimestepSamples(secondSeqs), tree, seqtree.Softmax{},
 			40.0, 10, 30)
-		delta = seqtree.AvgLossDelta(seqtree.TimestepSamples(secondSeqs), tree, seqtree.Softmax{}, 1.0)
+		delta += seqtree.AvgLossDelta(seqtree.TimestepSamples(secondSeqs), tree, seqtree.Softmax{},
+			1.0)
 		model.Add(tree, 1.0)
 	}
 	loss /= float32(len(intSeqs))
