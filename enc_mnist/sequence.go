@@ -69,8 +69,6 @@ func (s *SequenceModel) AddTree(intSeqs [][]int) (loss, delta float32) {
 			seqs[i] = seqtree.Sequence{s.sampleTimestep(model, intSeq)}
 		}
 		model.EvaluateAll(seqs)
-		firstSeqs := seqs[:len(seqs)/2]
-		secondSeqs := seqs[len(seqs)/2:]
 
 		for _, seq := range seqs {
 			loss += seq.MeanLoss(seqtree.Softmax{})
@@ -78,17 +76,18 @@ func (s *SequenceModel) AddTree(intSeqs [][]int) (loss, delta float32) {
 
 		builder := seqtree.Builder{
 			Heuristic: seqtree.HessianHeuristic{
-				Damping: 0.1,
+				Damping: 1.0,
 				Loss:    seqtree.Softmax{},
 			},
-			Depth:    4,
-			Horizons: []int{0},
-			MaxUnion: 5,
+			Depth:           4,
+			MinSplitSamples: 100,
+			Horizons:        []int{0},
+			MaxUnion:        5,
 		}
-		tree := builder.Build(seqtree.TimestepSamples(firstSeqs))
-		seqtree.ScaleOptimalStep(seqtree.TimestepSamples(secondSeqs), tree, seqtree.Softmax{},
+		tree := builder.Build(seqtree.TimestepSamples(seqs))
+		seqtree.ScaleOptimalStep(seqtree.TimestepSamples(seqs), tree, seqtree.Softmax{},
 			40.0, 10, 30)
-		delta += seqtree.AvgLossDelta(seqtree.TimestepSamples(secondSeqs), tree, seqtree.Softmax{},
+		delta += seqtree.AvgLossDelta(seqtree.TimestepSamples(seqs), tree, seqtree.Softmax{},
 			1.0)
 		model.Add(tree, 1.0)
 	}

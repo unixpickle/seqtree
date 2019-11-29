@@ -12,8 +12,6 @@ import (
 	"github.com/unixpickle/mnist"
 )
 
-const SequenceBatch = 2000
-
 func main() {
 	dataset := mnist.LoadTrainingDataSet()
 
@@ -29,7 +27,7 @@ func main() {
 	seqModel.Load("sequence_model.json")
 	log.Println("Training sequence model...")
 	for {
-		seqs := encoder.EncodeBatch(dataset, SequenceBatch)
+		seqs := encoder.EncodeBatch(dataset, len(dataset.Samples))
 		loss, delta := seqModel.AddTree(seqs)
 		log.Printf("tree %d: loss=%f delta=%f", seqModel.NumTrees()-1, loss, -delta)
 		seqModel.Save("sequence_model.json")
