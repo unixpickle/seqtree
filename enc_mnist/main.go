@@ -48,7 +48,7 @@ func GenerateSamples(e *Encoder, s *SequenceModel) {
 			pixels := e.Decode(s.Sample())
 			for i := 0; i < ImageSize; i++ {
 				for j := 0; j < ImageSize; j++ {
-					pixel := 255 / (1 + math.Exp(float64(pixels[i*ImageSize+j])))
+					pixel := 255 / (1 + math.Exp(-pixels[i*ImageSize+j]))
 					img.SetGray(row*ImageSize+j, col*ImageSize+i, color.Gray{Y: uint8(pixel)})
 				}
 			}
@@ -62,6 +62,10 @@ func GenerateSamples(e *Encoder, s *SequenceModel) {
 
 func GenerateReconstructions(ds mnist.DataSet, e *Encoder) {
 	mnist.SaveReconstructionGrid("recon.png", func(x []float64) []float64 {
-		return e.Decode(e.Encode(x))
+		vec := e.Decode(e.Encode(x))
+		for i, x := range vec {
+			vec[i] = 1 / (1 + math.Exp(-x))
+		}
+		return vec
 	}, ds, 10, 4)
 }
