@@ -23,6 +23,8 @@ func main() {
 		TrainEncoder(encoder, dataset)
 		encoder.Model.Save("encoder.json")
 	}
+	log.Println("Saving encoder reconstructions...")
+	GenerateReconstructions(testDataset, encoder)
 
 	seqModel := NewSequenceModel()
 	seqModel.Load("sequence_model.json")
@@ -56,4 +58,10 @@ func GenerateSamples(e *Encoder, s *SequenceModel) {
 	essentials.Must(err)
 	defer w.Close()
 	essentials.Must(png.Encode(w, img))
+}
+
+func GenerateReconstructions(ds mnist.DataSet, e *Encoder) {
+	mnist.SaveReconstructionGrid("recon.png", func(x []float64) []float64 {
+		return e.Decode(e.Encode(x))
+	}, ds, 10, 4)
 }
