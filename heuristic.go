@@ -123,33 +123,26 @@ func (h HessianHeuristic) inferDimension(vecSize int) int {
 	return x
 }
 
-// A PolynomialHeuristic approximates the (binary) loss
-// function as a high-order polynomial and minimizes it
-// exactly for each split.
-type PolynomialHeuristic struct{}
+// A PolynomialHeuristic approximates the loss function as
+// a bunch of polynomials and minimizes it exactly for
+// each split.
+type PolynomialHeuristic struct {
+	// MaxDelta, if specified, is the maximum change for
+	// outputs. If zero, it defaults to 1.0.
+	MaxDelta float32
+
+	Loss PolynomialLossFunc
+}
 
 func (p PolynomialHeuristic) SampleVector(sample *TimestepSample) []float32 {
 	ts := sample.Timestep()
-	if len(ts.Output) != 2 {
-		panic("PolynomialHeuristic is only supported with binary outputs")
+	polynomials := p.Loss.LossPolynomials(ts.Output, ts.Target)
+	res := make([]float32, 0, len(polynomials)*p.Loss.LossPolynomialSize())
+	for _, p := range polynomials {
+		res = append(res, 0)
+		res = append(res, p[1:]...)
 	}
-	poly := newPolynomialLogSigmoid(ts.Output[0] - ts.Output[1])
-	poly1 := newPolynomialLogSigmoid(ts.Output[1] - ts.Output[0])
-	for i, x := range poly {
-		poly[i] = -x * ts.Target[0]
-		if i%2 == 1 {
-			poly[i] += poly1[i] * ts.Target[1]
-		} else {
-			poly[i] -= poly1[i] * ts.Target[1]
-		}
-	}
-
-	// Getting rid of the constant term improves
-	// numerical accuracy without changing the
-	// objective
-	poly[0] = 0
-
-	return poly
+	return res
 }
 
 func (p PolynomialHeuristic) Quality(sum []float32) float32 {
@@ -159,11 +152,22 @@ func (p PolynomialHeuristic) Quality(sum []float32) float32 {
 
 func (p PolynomialHeuristic) LeafOutput(sum []float32) []float32 {
 	x, _ := p.minimize(sum)
-	return []float32{x, -x}
+	return x
 }
 
-func (p PolynomialHeuristic) minimize(poly polynomial) (float32, float32) {
-	x := minimizeUnary(-1, 1, 30, poly.Evaluate)
-	y := poly.Evaluate(x)
-	return x, y
+func (p PolynomialHeuristic) minimize(polys []float32) ([]float32, float32) {
+	delta := p.MaxDelta
+	if delta == 0 {
+		delta = 1
+	}
+	numPolys := len(polys) / p.Loss.LossPolynomialSize()
+	xs := make([]float32, numPolys)
+	y := float32(0)
+	for i := range xs {
+		idx := i * p.Loss.LossPolynomialSize()
+		poly := Polynomial(polys[idx : idx+p.Loss.LossPolynomialSize()])
+		xs[i] = minimizeUnary(-delta, delta, 30, poly.Apply)
+		y += poly.Apply(xs[i])
+	}
+	return xs, y
 }

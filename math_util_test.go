@@ -12,7 +12,7 @@ func TestPolynomialLogSigmoid(t *testing.T) {
 	for _, center := range centers {
 		p := newPolynomialLogSigmoid(center)
 		for x := float32(-1.0); x <= 1.0; x += 0.1 {
-			actual := p.Evaluate(x)
+			actual := p.Apply(x)
 			expected := exactLogSigmoid(center + x)
 			if math.Abs(float64(actual-expected)) > 1e-5 {
 				t.Errorf("log(sigmoid(%f+%f)) should be %f but got %f",

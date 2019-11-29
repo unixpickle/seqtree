@@ -51,7 +51,7 @@ func main() {
 	model.Load("model.json")
 
 	builder := seqtree.Builder{
-		Heuristic:       seqtree.PolynomialHeuristic{},
+		Heuristic:       seqtree.PolynomialHeuristic{Loss: seqtree.Sigmoid{}},
 		Depth:           Depth,
 		Horizons:        horizons,
 		MaxSplitSamples: MaxSplitSamples,
@@ -65,7 +65,7 @@ func main() {
 
 		totalLoss := float32(0)
 		for _, seq := range seqs {
-			totalLoss += seq.MeanLoss(seqtree.Softmax{})
+			totalLoss += seq.MeanLoss(seqtree.Sigmoid{})
 		}
 		totalLoss /= Batch
 
@@ -78,9 +78,9 @@ func main() {
 		seqs = SampleSequences(dataset, model, Batch)
 		model.EvaluateAll(seqs)
 
-		seqtree.ScaleOptimalStep(seqtree.TimestepSamples(seqs), tree, seqtree.Softmax{},
+		seqtree.ScaleOptimalStep(seqtree.TimestepSamples(seqs), tree, seqtree.Sigmoid{},
 			MaxStep, 10, 30)
-		delta := seqtree.AvgLossDelta(seqtree.TimestepSamples(seqs), tree, seqtree.Softmax{}, 1.0)
+		delta := seqtree.AvgLossDelta(seqtree.TimestepSamples(seqs), tree, seqtree.Sigmoid{}, 1.0)
 		model.Add(tree, 1.0)
 
 		log.Printf("step %d: loss=%f loss_delta=%f min_leaf=%d",
@@ -111,20 +111,18 @@ func SampleSequences(ds mnist.DataSet, m *seqtree.Model, count int) []seqtree.Se
 					x := i % ImageSize
 					y := i / ImageSize
 					ts := &seqtree.Timestep{
-						Output:   make([]float32, 2),
+						Output:   make([]float32, 1),
 						Features: seqtree.NewBitmap(m.NumFeatures()),
 						Target:   make([]float32, 2),
 					}
-					if prev != -1 {
-						ts.Features.Set(prev, true)
-					}
+					ts.Features.Set(0, prev == 1)
 					SetAxisFeatures(ts.Features, x, y)
 					if intensity > 0.5 {
 						prev = 1
 					} else {
 						prev = 0
 					}
-					ts.Target[prev] = 1.0
+					ts.Target[0] = float32(prev)
 					seq = append(seq, ts)
 				}
 				res[j] = seq
@@ -141,7 +139,7 @@ func GenerateSequence(m *seqtree.Model) {
 		for col := 0; col < 4; col++ {
 			seq := seqtree.Sequence{
 				&seqtree.Timestep{
-					Output:   make([]float32, 2),
+					Output:   make([]float32, 1),
 					Features: seqtree.NewBitmap(m.NumFeatures()),
 				},
 			}
@@ -150,15 +148,15 @@ func GenerateSequence(m *seqtree.Model) {
 					ts := seq[len(seq)-1]
 					SetAxisFeatures(ts.Features, j, i)
 					m.EvaluateAt(seq, len(seq)-1)
-					num := seqtree.Softmax{}.Sample(ts.Output)
-					if num == 1 {
+					pixel := seqtree.Sigmoid{}.Sample(ts.Output)[0]
+					if pixel {
 						img.SetGray(row*ImageSize+j, col*ImageSize+i, color.Gray{Y: 255})
 					}
 					ts = &seqtree.Timestep{
-						Output:   make([]float32, 2),
+						Output:   make([]float32, 1),
 						Features: seqtree.NewBitmap(m.NumFeatures()),
 					}
-					ts.Features.Set(num, true)
+					ts.Features.Set(0, pixel)
 					seq = append(seq, ts)
 				}
 			}

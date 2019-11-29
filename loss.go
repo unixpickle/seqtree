@@ -19,6 +19,12 @@ type HessianLossFunc interface {
 	LossHessian(outputs, targets []float32) *Hessian
 }
 
+type PolynomialLossFunc interface {
+	LossFunc
+	LossPolynomialSize() int
+	LossPolynomials(outputs, targets []float32) []Polynomial
+}
+
 type Softmax struct{}
 
 // Sample samples a softmax distribution from logits.
@@ -92,6 +98,8 @@ func (s Softmax) LossGrad(outputs, targets []float32) []float32 {
 	return grad
 }
 
+// LossHessian computes the second derivatives of the
+// logits with respect to the targets.
 func (s Softmax) LossHessian(outputs, targets []float32) *Hessian {
 	max := outputs[0]
 	for _, x := range outputs[1:] {
@@ -155,47 +163,65 @@ func (s Softmax) logSoftmax(logits []float32) []float32 {
 	return res
 }
 
-// Hessian is a square symmetric matrix representing the
-// second derivatives of a loss function.
-type Hessian struct {
-	Dim  int
-	Data []float32
-}
+type Sigmoid struct{}
 
-// Apply multiplies the Hessian by the vector v.
-func (h *Hessian) Apply(v []float32) []float32 {
-	if len(v) != h.Dim {
-		panic("dimension mismatch")
-	}
-	res := make([]float32, h.Dim)
-	for i := 0; i < h.Dim; i++ {
-		rowIdx := i * h.Dim
-		for j := 0; j < h.Dim; j++ {
-			res[i] += h.Data[rowIdx+j] * v[j]
-		}
+// Sample samples a the logistic distribution.
+func (s Sigmoid) Sample(outputs []float32) []bool {
+	res := make([]bool, len(outputs))
+	for i, x := range outputs {
+		prob := 1 / (1 + math.Exp(float64(-x)))
+		res[i] = rand.Float64() < prob
 	}
 	return res
 }
 
-// ApplyInverse solves the equation Hx = v for x.
-func (h *Hessian) ApplyInverse(v []float32) []float32 {
-	x := make([]float32, len(v))
-
-	// Perform h.Dim steps of gradient descent.
-	// In the future, this should probably use CG or some
-	// more efficient method.
-	for i := 0; i < h.Dim; i++ {
-		residual := vectorDifference(v, h.Apply(x))
-		product := h.Apply(residual)
-		divisor := vectorNormSquared(product)
-		if divisor == 0 {
-			break
-		}
-		stepSize := vectorDot(residual, product) / divisor
-		for j, y := range residual {
-			x[j] += stepSize * y
-		}
+// Loss computes the loss function given output logits and
+// target probabilities.
+func (s Sigmoid) Loss(outputs, targets []float32) float32 {
+	var total float32
+	for i, x := range outputs {
+		t := targets[i]
+		total += Softmax{}.Loss([]float32{x, 0}, []float32{t, 1 - t})
 	}
+	return total
+}
 
-	return x
+// LossGrad computes the gradient of the sigmoid loss with
+// respect to the logits.
+func (s Sigmoid) LossGrad(outputs, targets []float32) []float32 {
+	res := make([]float32, len(outputs))
+	for i, x := range outputs {
+		t := targets[i]
+		g := Softmax{}.LossGrad([]float32{x, 0}, []float32{t, 1 - t})[0]
+		res[i] = g
+	}
+	return res
+}
+
+func (s Sigmoid) LossHessian(outputs, targets []float32) *Hessian {
+	res := &Hessian{
+		Dim:  len(outputs),
+		Data: make([]float32, len(outputs)*len(outputs)),
+	}
+	for i, x := range outputs {
+		t := targets[i]
+		h := Softmax{}.LossHessian([]float32{x, 0}, []float32{t, 1 - t})
+		res.Data[i+i*len(outputs)] = h.Data[0]
+	}
+	return res
+}
+
+func (s Sigmoid) LossPolynomialSize() int {
+	return 10
+}
+
+func (s Sigmoid) LossPolynomials(outputs, targets []float32) []Polynomial {
+	res := make([]Polynomial, len(outputs))
+	for i, x := range outputs {
+		t := targets[i]
+		p1 := newPolynomialLogSigmoid(x).Scale(t)
+		p2 := newPolynomialLogSigmoid(-x).FlipX().Scale(1 - t)
+		res[i] = p1.Add(p2).Scale(-1)
+	}
+	return res
 }
