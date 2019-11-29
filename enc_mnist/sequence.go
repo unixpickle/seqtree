@@ -39,6 +39,8 @@ func (s *SequenceModel) Sample() []int {
 func (s *SequenceModel) AddTree(intSeqs [][]int) (loss, delta float32) {
 	seqs := s.sequences(intSeqs)
 	s.Model.EvaluateAll(seqs)
+	firstSeqs := seqs[:len(seqs)/2]
+	secondSeqs := seqs[len(seqs)/2:]
 
 	for _, seq := range seqs {
 		loss += seq.MeanLoss(seqtree.Sigmoid{})
@@ -60,10 +62,10 @@ func (s *SequenceModel) AddTree(intSeqs [][]int) (loss, delta float32) {
 		MinSplitSamples: len(seqs) / 1000,
 		MaxUnion:        5,
 	}
-	tree := builder.Build(seqtree.TimestepSamples(seqs))
-	seqtree.ScaleOptimalStep(seqtree.TimestepSamples(seqs), tree, seqtree.Softmax{},
+	tree := builder.Build(seqtree.TimestepSamples(firstSeqs))
+	seqtree.ScaleOptimalStep(seqtree.TimestepSamples(secondSeqs), tree, seqtree.Softmax{},
 		40.0, 10, 30)
-	delta = seqtree.AvgLossDelta(seqtree.TimestepSamples(seqs), tree, seqtree.Softmax{}, 1.0)
+	delta = seqtree.AvgLossDelta(seqtree.TimestepSamples(secondSeqs), tree, seqtree.Softmax{}, 1.0)
 	s.Model.Add(tree, 1.0)
 
 	return
