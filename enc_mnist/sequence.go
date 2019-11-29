@@ -95,6 +95,22 @@ func (s *SequenceModel) AddTree(intSeqs [][]int) (loss, delta float32) {
 	return
 }
 
+func (s *SequenceModel) MeanLoss(intSeqs [][]int) float32 {
+	var loss float32
+	for _, model := range s.Models {
+		seqs := make([]seqtree.Sequence, len(intSeqs))
+		for i, intSeq := range intSeqs {
+			seqs[i] = seqtree.Sequence{s.sampleTimestep(model, intSeq)}
+		}
+		model.EvaluateAll(seqs)
+
+		for _, seq := range seqs {
+			loss += seq.MeanLoss(seqtree.Softmax{})
+		}
+	}
+	return loss / float32(len(intSeqs))
+}
+
 func (s *SequenceModel) sampleTimestep(model *seqtree.Model, seq []int) *seqtree.Timestep {
 	numPrefix := model.BaseFeatures / EncodingOptions
 	ts := &seqtree.Timestep{

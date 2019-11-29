@@ -14,6 +14,7 @@ import (
 
 func main() {
 	dataset := mnist.LoadTrainingDataSet()
+	testDataset := mnist.LoadTestingDataSet()
 
 	encoder := NewEncoder()
 	encoder.Model.Load("encoder.json")
@@ -27,9 +28,12 @@ func main() {
 	seqModel.Load("sequence_model.json")
 	log.Println("Training sequence model...")
 	seqs := encoder.EncodeBatch(dataset, len(dataset.Samples))
+	testSeqs := encoder.EncodeBatch(dataset, len(dataset.Samples))
 	for {
+		testLoss := seqModel.MeanLoss(testSeqs)
 		loss, delta := seqModel.AddTree(seqs)
-		log.Printf("tree %d: loss=%f delta=%f", seqModel.NumTrees()-1, loss, -delta)
+		log.Printf("tree %d: loss=%f delta=%f test=%f", seqModel.NumTrees()-1, loss, -delta,
+			testLoss)
 		seqModel.Save("sequence_model.json")
 		GenerateSamples(encoder, seqModel)
 	}
