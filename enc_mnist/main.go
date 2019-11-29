@@ -26,8 +26,8 @@ func main() {
 	seqModel := NewSequenceModel()
 	seqModel.Load("sequence_model.json")
 	log.Println("Training sequence model...")
+	seqs := encoder.EncodeBatch(dataset, len(dataset.Samples))
 	for {
-		seqs := encoder.EncodeBatch(dataset, len(dataset.Samples))
 		loss, delta := seqModel.AddTree(seqs)
 		log.Printf("tree %d: loss=%f delta=%f", seqModel.NumTrees()-1, loss, -delta)
 		seqModel.Save("sequence_model.json")
