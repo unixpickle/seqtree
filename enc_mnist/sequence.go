@@ -63,6 +63,7 @@ func (s *SequenceModel) Sample() []int {
 }
 
 func (s *SequenceModel) AddTree(intSeqs [][]int) (loss, delta float32) {
+	const shrinkage = 0.1
 	for _, model := range s.Models {
 		seqs := make([]seqtree.Sequence, len(intSeqs))
 		for i, intSeq := range intSeqs {
@@ -88,8 +89,8 @@ func (s *SequenceModel) AddTree(intSeqs [][]int) (loss, delta float32) {
 		seqtree.ScaleOptimalStep(seqtree.TimestepSamples(seqs), tree, seqtree.Softmax{},
 			40.0, 10, 30)
 		delta += seqtree.AvgLossDelta(seqtree.TimestepSamples(seqs), tree, seqtree.Softmax{},
-			1.0)
-		model.Add(tree, 1.0)
+			shrinkage)
+		model.Add(tree, shrinkage)
 	}
 	loss /= float32(len(intSeqs))
 	return
