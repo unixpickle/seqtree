@@ -43,7 +43,7 @@ func (s *SequenceModel) AddTree(intSeqs [][]int) (loss, delta float32) {
 	secondSeqs := seqs[len(seqs)/2:]
 
 	for _, seq := range seqs {
-		loss += seq.MeanLoss(seqtree.Sigmoid{})
+		loss += seq.MeanLoss(seqtree.Softmax{})
 	}
 	loss /= float32(len(seqs))
 
