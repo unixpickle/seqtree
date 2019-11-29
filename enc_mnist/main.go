@@ -28,7 +28,7 @@ func main() {
 	seqModel.Load("sequence_model.json")
 	log.Println("Training sequence model...")
 	seqs := encoder.EncodeBatch(dataset, len(dataset.Samples))
-	testSeqs := encoder.EncodeBatch(dataset, len(dataset.Samples))
+	testSeqs := encoder.EncodeBatch(testDataset, len(dataset.Samples))
 	for {
 		testLoss := seqModel.MeanLoss(testSeqs)
 		loss, delta := seqModel.AddTree(seqs)
