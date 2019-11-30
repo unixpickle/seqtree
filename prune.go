@@ -1,6 +1,8 @@
 package seqtree
 
-import "math"
+import (
+	"math"
+)
 
 // A Pruner stores parameters for pruning trees to prevent
 // overfitting.
@@ -14,67 +16,83 @@ type Pruner struct {
 	MaxLeaves int
 }
 
-func (p *Pruner) Prune(samples []*TimestepSample, t *Tree) {
+func (p *Pruner) Prune(samples []*TimestepSample, t *Tree) *Tree {
 	if p.MaxLeaves < 1 {
 		panic("cannot restrict to fewer than 1 leaves")
 	}
-
 	vecSamples := newVecSamples(p.Heuristic, samples)
-	sums := p.leafSums(vecSamples, t)
-	bases := p.baseBranches(t)
-
-	for len(sums) > p.MaxLeaves {
-		lowestScore := float32(math.Inf(1))
-		var lowestBase *Tree
-		for _, base := range bases {
-			sum1 := sums[base.Branch.FalseBranch.Leaf].Sum()
-			sum2 := sums[base.Branch.TrueBranch.Leaf].Sum()
-			combinedSum := newKahanSum(len(sum1))
-			combinedSum.Add(sum1)
-			combinedSum.Add(sum2)
-			score := p.Heuristic.Quality(sum1) + p.Heuristic.Quality(sum2) -
-				p.Heuristic.Quality(combinedSum.Sum())
-			if score < lowestScore {
-				lowestScore = score
-				lowestBase = base
+	result := t
+	for {
+		leaves := result.Leaves()
+		if len(leaves) <= p.MaxLeaves {
+			break
+		}
+		bestQuality := float32(math.Inf(-1))
+		var bestTree *Tree
+		for _, l := range leaves {
+			t1 := pruneLeaf(result, l)
+			q := p.treeQuality(vecSamples, t1)
+			if q > bestQuality {
+				bestQuality = q
+				bestTree = t1
 			}
 		}
-		b := lowestBase.Branch
-		newSum := sums[b.FalseBranch.Leaf]
-		newSum.Add(sums[b.TrueBranch.Leaf].Sum())
-		delete(sums, b.FalseBranch.Leaf)
-		delete(sums, b.TrueBranch.Leaf)
-		lowestBase.Branch = nil
-		lowestBase.Leaf = &Leaf{
-			OutputDelta: p.Heuristic.LeafOutput(newSum.Sum()),
-		}
-		sums[lowestBase.Leaf] = newSum
-		bases = p.baseBranches(t)
+		result = bestTree
 	}
+	if result != t {
+		result = result.Copy()
+		p.recomputeOutputDeltas(vecSamples, result)
+	}
+	return result
 }
 
-func (p *Pruner) baseBranches(t *Tree) []*Tree {
-	if t.Leaf != nil {
-		return nil
-	} else if t.Branch.FalseBranch.Leaf != nil && t.Branch.TrueBranch.Leaf != nil {
-		return []*Tree{t}
-	} else {
-		return append(p.baseBranches(t.Branch.FalseBranch),
-			p.baseBranches(t.Branch.TrueBranch)...)
+func (p *Pruner) treeQuality(samples []vecSample, t *Tree) float32 {
+	sums := p.leafSums(samples, t)
+	quality := newKahanSum(1)
+	for _, s := range sums {
+		quality.Add([]float32{p.Heuristic.Quality(s.Sum())})
+	}
+	return quality.Sum()[0]
+}
+
+func (p *Pruner) recomputeOutputDeltas(samples []vecSample, t *Tree) {
+	sums := p.leafSums(samples, t)
+	for l, s := range sums {
+		l.OutputDelta = p.Heuristic.LeafOutput(s.Sum())
 	}
 }
 
 func (p *Pruner) leafSums(samples []vecSample, t *Tree) map[*Leaf]*kahanSum {
-	res := map[*Leaf]*kahanSum{}
+	sums := map[*Leaf]*kahanSum{}
 	for _, s := range samples {
 		leaf := t.Evaluate(&s.TimestepSample)
-		if sum, ok := res[leaf]; ok {
+		if sum, ok := sums[leaf]; ok {
 			sum.Add(s.Vector)
 		} else {
 			sum = newKahanSum(len(s.Vector))
 			sum.Add(s.Vector)
-			res[leaf] = sum
+			sums[leaf] = sum
 		}
 	}
-	return res
+	return sums
+}
+
+func pruneLeaf(t *Tree, l *Leaf) *Tree {
+	if t.Leaf == l {
+		panic("cannot prune root")
+	} else if t.Leaf != nil {
+		return t
+	} else if t.Branch.FalseBranch.Leaf == l {
+		return t.Branch.TrueBranch
+	} else if t.Branch.TrueBranch.Leaf == l {
+		return t.Branch.FalseBranch
+	} else {
+		return &Tree{
+			Branch: &Branch{
+				Feature:     t.Branch.Feature,
+				FalseBranch: pruneLeaf(t.Branch.FalseBranch, l),
+				TrueBranch:  pruneLeaf(t.Branch.TrueBranch, l),
+			},
+		}
+	}
 }

@@ -122,6 +122,26 @@ type Tree struct {
 	Leaf   *Leaf
 }
 
+// Copy creates a deep copy of the tree.
+func (t *Tree) Copy() *Tree {
+	if t.Leaf != nil {
+		return &Tree{
+			Leaf: &Leaf{
+				OutputDelta: append([]float32{}, t.Leaf.OutputDelta...),
+				Feature:     t.Leaf.Feature,
+			},
+		}
+	} else {
+		return &Tree{
+			Branch: &Branch{
+				Feature:     append(BranchFeatureUnion{}, t.Branch.Feature...),
+				FalseBranch: t.Branch.FalseBranch.Copy(),
+				TrueBranch:  t.Branch.TrueBranch.Copy(),
+			},
+		}
+	}
+}
+
 // Evaluate runs the tree for the timestep.
 func (t *Tree) Evaluate(ts *TimestepSample) *Leaf {
 	if t.Leaf != nil {
