@@ -1,6 +1,10 @@
 package seqtree
 
-import "sort"
+import (
+	"runtime"
+	"sort"
+	"sync"
+)
 
 // A Heuristic is a splitting critereon that, in some way
 // or another, assesses how good a feature split is.
@@ -170,4 +174,56 @@ func (p PolynomialHeuristic) minimize(polys []float32) ([]float32, float32) {
 		y += poly.Apply(xs[i])
 	}
 	return xs, y
+}
+
+// A vecSample is a sample and its associated heuristic
+// vector representation.
+type vecSample struct {
+	TimestepSample
+
+	// Vector is some linear representation of the loss
+	// function for this sample.
+	// It may be a gradient, or a set of polynomial
+	// coefficients, or a combination of a gradient and a
+	// hessian matrix.
+	Vector []float32
+}
+
+func newVecSamples(h Heuristic, samples []*TimestepSample) []vecSample {
+	res := make([]vecSample, len(samples))
+
+	numProcs := runtime.GOMAXPROCS(0)
+	wg := sync.WaitGroup{}
+	for i := 0; i < numProcs; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			for j := i; j < len(samples); j += numProcs {
+				sample := samples[j]
+				res[j].TimestepSample = *sample
+				res[j].Vector = h.SampleVector(sample)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	return res
+}
+
+func vecSamplesOutputDelta(h Heuristic, samples []vecSample) []float32 {
+	sum := newKahanSum(len(samples[0].Vector))
+	for _, s := range samples {
+		sum.Add(s.Vector)
+	}
+	return h.LeafOutput(sum.Sum())
+}
+
+func (l *vecSample) BranchFeatureFast(stepsInPast, byteIdx int, bitMask byte) bool {
+	if stepsInPast > l.Index {
+		return byteIdx == -1
+	} else if byteIdx == -1 {
+		return false
+	}
+	ts := l.Sequence[l.Index-stepsInPast]
+	return ts.Features.bytes[byteIdx]&bitMask != 0
 }

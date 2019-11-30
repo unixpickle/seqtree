@@ -14,6 +14,7 @@ func TestOptimalStep(t *testing.T) {
 			for i := 0; i < 10; i++ {
 				m := generateTestModel(baseFeatures)
 				b := &Builder{
+					Heuristic:       GradientHeuristic{Loss: Softmax{}},
 					Depth:           3,
 					MinSplitSamples: 10,
 					Horizons:        []int{0, 1, 2},

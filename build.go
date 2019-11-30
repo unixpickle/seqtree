@@ -67,17 +67,17 @@ func (b *Builder) Build(samples []*TimestepSample) *Tree {
 	if b.Heuristic == nil {
 		panic("no heuristic was specified")
 	}
-	data := b.computeLossSamples(samples)
+	data := newVecSamples(b.Heuristic, samples)
 	return b.build(data, b.Depth)
 }
 
 // build recursively creates a tree that splits up the
 // samples in order to fit the functional gradient.
-func (b *Builder) build(samples []lossSample, depth int) *Tree {
+func (b *Builder) build(samples []vecSample, depth int) *Tree {
 	if depth == 0 || len(samples) <= b.MinSplitSamples {
 		return &Tree{
 			Leaf: &Leaf{
-				OutputDelta: b.computeOutputDelta(samples),
+				OutputDelta: vecSamplesOutputDelta(b.Heuristic, samples),
 			},
 		}
 	}
@@ -95,7 +95,7 @@ func (b *Builder) build(samples []lossSample, depth int) *Tree {
 //
 // This function may modify the trues slice, but not the
 // falses slice.
-func (b *Builder) buildUnion(union BranchFeatureUnion, falses, trues []lossSample,
+func (b *Builder) buildUnion(union BranchFeatureUnion, falses, trues []vecSample,
 	depth int) *Tree {
 	if len(union) > 0 && len(union) >= b.MaxUnion {
 		return b.buildSubtree(union, falses, trues, depth)
@@ -118,7 +118,7 @@ func (b *Builder) buildUnion(union BranchFeatureUnion, falses, trues []lossSampl
 		return b.buildSubtree(union, falses, trues, depth)
 	}
 
-	var newFalses []lossSample
+	var newFalses []vecSample
 	for _, sample := range falses {
 		if sample.BranchFeature(*bestFeature) {
 			trues = append(trues, sample)
@@ -132,7 +132,7 @@ func (b *Builder) buildUnion(union BranchFeatureUnion, falses, trues []lossSampl
 
 // buildSubtree creates the branches (or leaf) node for
 // the given union and its resulting split.
-func (b *Builder) buildSubtree(union BranchFeatureUnion, falses, trues []lossSample,
+func (b *Builder) buildSubtree(union BranchFeatureUnion, falses, trues []vecSample,
 	depth int) *Tree {
 	if len(union) == 0 {
 		return b.build(falses, 0)
@@ -155,7 +155,7 @@ func (b *Builder) buildSubtree(union BranchFeatureUnion, falses, trues []lossSam
 // The current split is indicated by falses and trues.
 // It is assumed that the newly selected feature will act
 // to move samples from falses into trues.
-func (b *Builder) optimalFeature(falses, trues []lossSample, f []BranchFeature) *BranchFeature {
+func (b *Builder) optimalFeature(falses, trues []vecSample, f []BranchFeature) *BranchFeature {
 	sums := newLossSums(falses, trues)
 
 	var lock sync.Mutex
@@ -226,7 +226,7 @@ func (b *Builder) optimalFeature(falses, trues []lossSample, f []BranchFeature) 
 // the fraction of the original falses slice that was
 // passed.
 // The trues argument is never a subset.
-func (b *Builder) sortFeatures(falses, trues []lossSample, sampleFrac float32) []BranchFeature {
+func (b *Builder) sortFeatures(falses, trues []vecSample, sampleFrac float32) []BranchFeature {
 	if len(falses) == 0 {
 		panic("no data")
 	}
@@ -313,7 +313,7 @@ func (b *Builder) sortFeatures(falses, trues []lossSample, sampleFrac float32) [
 	return resultingFeatures
 }
 
-func (b *Builder) countFeatureOccurrences(samples []lossSample) [][]int {
+func (b *Builder) countFeatureOccurrences(samples []vecSample) [][]int {
 	numFeatures := samples[0].Timestep().Features.Len() + 1
 	makeCounts := func() [][]int {
 		res := make([][]int, len(b.Horizons))
@@ -392,7 +392,7 @@ func (b *Builder) filterFeatures(counts [][]int, falseCount, trueCount int,
 	return features, trueIsMinority
 }
 
-func (b *Builder) sumMinorities(samples []lossSample, counts, features [][]int,
+func (b *Builder) sumMinorities(samples []vecSample, counts, features [][]int,
 	trueIsMinority [][]bool) [][]kahanSum {
 	vecSize := len(samples[0].Vector)
 	makeSums := func() [][]kahanSum {
@@ -465,7 +465,7 @@ func (b *Builder) sumMinorities(samples []lossSample, counts, features [][]int,
 // The result is greater for better splits.
 //
 // See sortFeatures() for details on sampleFrac.
-func (b *Builder) featureSplitQuality(falses, trues []lossSample, sums *lossSums, f BranchFeature,
+func (b *Builder) featureSplitQuality(falses, trues []vecSample, sums *lossSums, f BranchFeature,
 	sampleFrac float32) float32 {
 	featureValues, splitFalseCount, splitTrueCount := b.evaluateFeature(falses, f)
 
@@ -509,7 +509,7 @@ func (b *Builder) featureSplitQuality(falses, trues []lossSample, sums *lossSums
 	return newQuality - oldQuality
 }
 
-func (b *Builder) evaluateFeature(samples []lossSample, f BranchFeature) (values []bool,
+func (b *Builder) evaluateFeature(samples []vecSample, f BranchFeature) (values []bool,
 	falses, trues int) {
 	byteIdx := f.Feature >> 3
 	bitMask := byte(1) << uint8(f.Feature&7)
@@ -530,7 +530,7 @@ func (b *Builder) evaluateFeature(samples []lossSample, f BranchFeature) (values
 	return
 }
 
-func (b *Builder) minoritySum(samples []lossSample, values []bool, trueIsMinority bool) []float32 {
+func (b *Builder) minoritySum(samples []vecSample, values []bool, trueIsMinority bool) []float32 {
 	minoritySum := newKahanSum(len(samples[0].Vector))
 	for i, val := range values {
 		if val == trueIsMinority {
@@ -540,62 +540,12 @@ func (b *Builder) minoritySum(samples []lossSample, values []bool, trueIsMinorit
 	return minoritySum.Sum()
 }
 
-func (b *Builder) computeLossSamples(samples []*TimestepSample) []lossSample {
-	res := make([]lossSample, len(samples))
-
-	numProcs := runtime.GOMAXPROCS(0)
-	wg := sync.WaitGroup{}
-	for i := 0; i < numProcs; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			for j := i; j < len(samples); j += numProcs {
-				sample := samples[j]
-				res[j].TimestepSample = *sample
-				res[j].Vector = b.Heuristic.SampleVector(sample)
-			}
-		}(i)
-	}
-	wg.Wait()
-
-	return res
-}
-
-func (b *Builder) computeOutputDelta(samples []lossSample) []float32 {
-	sum := newKahanSum(len(samples[0].Vector))
-	for _, s := range samples {
-		sum.Add(s.Vector)
-	}
-	return b.Heuristic.LeafOutput(sum.Sum())
-}
-
-type lossSample struct {
-	TimestepSample
-
-	// Vector is some linear representation of the loss
-	// function for this sample.
-	// It may be a gradient, or a set of polynomial
-	// coefficients, or a combination of a gradient and a
-	// hessian matrix.
-	Vector []float32
-}
-
-func (l *lossSample) BranchFeatureFast(stepsInPast, byteIdx int, bitMask byte) bool {
-	if stepsInPast > l.Index {
-		return byteIdx == -1
-	} else if byteIdx == -1 {
-		return false
-	}
-	ts := l.Sequence[l.Index-stepsInPast]
-	return ts.Features.bytes[byteIdx]&bitMask != 0
-}
-
 type lossSums struct {
 	False []float32
 	True  []float32
 }
 
-func newLossSums(falses, trues []lossSample) *lossSums {
+func newLossSums(falses, trues []vecSample) *lossSums {
 	falseSum := newKahanSum(len(falses[0].Vector))
 	trueSum := newKahanSum(len(falseSum.Sum()))
 	for _, s := range falses {
@@ -607,10 +557,10 @@ func newLossSums(falses, trues []lossSample) *lossSums {
 	return &lossSums{False: falseSum.Sum(), True: trueSum.Sum()}
 }
 
-func subsampleLimit(samples []lossSample, max int) ([]lossSample, float32) {
+func subsampleLimit(samples []vecSample, max int) ([]vecSample, float32) {
 	splitSamples := samples
 	if max != 0 && len(splitSamples) > max {
-		splitSamples = make([]lossSample, max)
+		splitSamples = make([]vecSample, max)
 		for i, j := range rand.Perm(len(samples))[:max] {
 			splitSamples[i] = samples[j]
 		}
