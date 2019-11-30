@@ -12,7 +12,7 @@ import (
 	"github.com/unixpickle/mnist"
 )
 
-const Batch = 10000
+const Batch = 100000
 
 func main() {
 	data := mnist.LoadTrainingDataSet()
@@ -36,8 +36,8 @@ func main() {
 
 func CollectSamples(ds mnist.DataSet, n int) []mnist.Sample {
 	res := make([]mnist.Sample, n)
-	for i, j := range rand.Perm(len(ds.Samples))[:n] {
-		res[i] = ds.Samples[j]
+	for i := 0; i < n; i++ {
+		res[i] = ds.Samples[rand.Intn(len(ds.Samples))]
 	}
 	return res
 }
