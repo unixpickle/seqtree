@@ -2,6 +2,10 @@ package seqtree
 
 import (
 	"math"
+	"runtime"
+	"sync"
+
+	"github.com/unixpickle/essentials"
 )
 
 // A Pruner stores parameters for pruning trees to prevent
@@ -22,28 +26,44 @@ func (p *Pruner) Prune(samples []*TimestepSample, t *Tree) *Tree {
 	}
 	vecSamples := newVecSamples(p.Heuristic, samples)
 	result := t
-	for {
-		leaves := result.Leaves()
-		if len(leaves) <= p.MaxLeaves {
-			break
-		}
-		bestQuality := float32(math.Inf(-1))
-		var bestTree *Tree
-		for _, l := range leaves {
-			t1 := pruneLeaf(result, l)
-			q := p.treeQuality(vecSamples, t1)
-			if q > bestQuality {
-				bestQuality = q
-				bestTree = t1
-			}
-		}
-		result = bestTree
+	for len(result.Leaves()) > p.MaxLeaves {
+		result = p.bestPrune(vecSamples, result)
 	}
 	if result != t {
 		result = result.Copy()
 		p.recomputeOutputDeltas(vecSamples, result)
 	}
 	return result
+}
+
+func (p *Pruner) bestPrune(samples []vecSample, t *Tree) *Tree {
+	leaves := t.Leaves()
+
+	var lock sync.Mutex
+	var bestTree *Tree
+	bestQuality := float32(math.Inf(-1))
+
+	var wg sync.WaitGroup
+	numProcs := essentials.MinInt(runtime.GOMAXPROCS(0), len(leaves))
+	for i := 0; i < numProcs; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			for j := i; j < len(leaves); j += numProcs {
+				t1 := pruneLeaf(t, leaves[j])
+				q := p.treeQuality(samples, t1)
+				lock.Lock()
+				if q > bestQuality {
+					bestQuality = q
+					bestTree = t1
+				}
+				lock.Unlock()
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	return bestTree
 }
 
 func (p *Pruner) treeQuality(samples []vecSample, t *Tree) float32 {
