@@ -22,10 +22,14 @@ func TrainEncoder(e *Encoder, ds mnist.DataSet) {
 
 	builder := seqtree.Builder{
 		Heuristic:       seqtree.GradientHeuristic{Loss: seqtree.Sigmoid{}},
-		Depth:           3,
+		Depth:           4,
 		MinSplitSamples: 10,
 		MaxUnion:        5,
 		Horizons:        []int{0},
+	}
+	pruner := seqtree.Pruner{
+		Heuristic: builder.Heuristic,
+		MaxLeaves: EncodingOptions,
 	}
 
 	for e.NeedsTraining() {
@@ -37,18 +41,21 @@ func TrainEncoder(e *Encoder, ds mnist.DataSet) {
 			loss += s.MeanLoss(seqtree.Sigmoid{})
 		}
 
-		if len(e.Model.Trees) != 0 {
-			// First step benefits from GradientHeuristic.
+		if len(e.Model.Trees) >= 2 {
+			// First steps benefit from GradientHeuristic.
 			builder.Heuristic = seqtree.PolynomialHeuristic{Loss: seqtree.Sigmoid{}}
 		}
 		tree := builder.Build(seqtree.TimestepSamples(samples))
-
-		samples = generateEncodingSamples(ds, batch)
-		e.Model.EvaluateAll(samples)
+		tree = pruner.Prune(seqtree.TimestepSamples(samples), tree)
 		seqtree.ScaleOptimalStep(seqtree.TimestepSamples(samples), tree, seqtree.Sigmoid{},
 			20, 1, 30)
+
+		// Evaluate delta on a different batch.
+		samples = generateEncodingSamples(ds, batch)
+		e.Model.EvaluateAll(samples)
 		delta := seqtree.AvgLossDelta(seqtree.TimestepSamples(samples), tree, seqtree.Sigmoid{},
 			1.0)
+
 		e.Model.Add(tree, 1.0)
 
 		log.Printf("tree %d: loss=%f delta=%f", len(e.Model.Trees)-1, loss/batch, -delta)

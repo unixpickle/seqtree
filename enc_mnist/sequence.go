@@ -81,12 +81,17 @@ func (s *SequenceModel) AddTree(intSeqs [][]int) (loss, delta float32) {
 				Damping: 1.0,
 				Loss:    seqtree.Softmax{},
 			},
-			Depth:           4,
+			Depth:           5,
 			MinSplitSamples: 100,
 			Horizons:        []int{0},
 			MaxUnion:        5,
 		}
+		pruner := seqtree.Pruner{
+			Heuristic: builder.Heuristic,
+			MaxLeaves: 10,
+		}
 		tree := builder.Build(seqtree.TimestepSamples(seqs))
+		tree = pruner.Prune(seqtree.TimestepSamples(seqs), tree)
 		seqtree.ScaleOptimalStep(seqtree.TimestepSamples(seqs), tree, seqtree.Softmax{},
 			40.0, 10, 30)
 		delta += seqtree.AvgLossDelta(seqtree.TimestepSamples(seqs), tree, seqtree.Softmax{},
