@@ -38,7 +38,7 @@ func (s *SequenceModel) Sample() []bool {
 	return sample
 }
 
-func (s *SequenceModel) AddTree(samples []*seqtree.Timestep) (loss, delta float32) {
+func (s *SequenceModel) AddTree(samples, validation []*seqtree.Timestep) (loss, delta float32) {
 	shrinkage := float32(0.1)
 	if len(s.Model.Trees) == 0 {
 		// Take a large initial step.
@@ -46,10 +46,15 @@ func (s *SequenceModel) AddTree(samples []*seqtree.Timestep) (loss, delta float3
 	}
 
 	seqs := make([]seqtree.Sequence, len(samples))
+	validationSeqs := make([]seqtree.Sequence, len(validation))
 	for i, sample := range samples {
 		seqs[i] = seqtree.Sequence{sample}
 	}
+	for i, sample := range validation {
+		validationSeqs[i] = seqtree.Sequence{sample}
+	}
 	s.Model.EvaluateAll(seqs)
+	s.Model.EvaluateAll(validationSeqs)
 
 	for _, seq := range seqs {
 		loss += seq.MeanLoss(seqtree.Sigmoid{})
@@ -72,7 +77,7 @@ func (s *SequenceModel) AddTree(samples []*seqtree.Timestep) (loss, delta float3
 	tree = pruner.Prune(seqtree.TimestepSamples(seqs), tree)
 	seqtree.ScaleOptimalStep(seqtree.TimestepSamples(seqs), tree, seqtree.Sigmoid{},
 		40.0, 10, 30)
-	delta += seqtree.AvgLossDelta(seqtree.TimestepSamples(seqs), tree, seqtree.Sigmoid{},
+	delta += seqtree.AvgLossDelta(seqtree.TimestepSamples(validationSeqs), tree, seqtree.Sigmoid{},
 		shrinkage)
 	s.Model.Add(tree, shrinkage)
 

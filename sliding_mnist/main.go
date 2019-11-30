@@ -25,7 +25,8 @@ func main() {
 		testLoss := seqModel.MeanLoss(testSeqs)
 
 		trainSeqs := seqModel.Timesteps(CollectSamples(data, Batch))
-		loss, delta := seqModel.AddTree(trainSeqs)
+		validSeqs := seqModel.Timesteps(CollectSamples(data, Batch))
+		loss, delta := seqModel.AddTree(trainSeqs, validSeqs)
 
 		log.Printf("tree %d: loss=%f delta=%f test=%f", len(seqModel.Model.Trees)-1, loss, -delta,
 			testLoss)
