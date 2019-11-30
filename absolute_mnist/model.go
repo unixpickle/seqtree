@@ -69,7 +69,11 @@ func (s *SequenceModel) Sample() []bool {
 }
 
 func (s *SequenceModel) AddTree(boolSeqs [][]bool) (loss, delta float32) {
-	const shrinkage = 0.1
+	shrinkage := float32(0.1)
+	if s.NumTrees() == 0 {
+		// Take a large initial step.
+		shrinkage = 1
+	}
 	for _, model := range s.Models {
 		seqs := make([]seqtree.Sequence, len(boolSeqs))
 		for i, boolSeq := range boolSeqs {
