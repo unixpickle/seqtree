@@ -56,6 +56,7 @@ func (s *SequenceModel) Sample() []int {
 	var sample []int
 	for _, model := range s.Models {
 		ts := s.sampleTimestep(model, sample)
+		model.Evaluate(seqtree.Sequence{ts})
 		idx := seqtree.Softmax{}.Sample(ts.Output)
 		sample = append(sample, idx)
 	}
