@@ -213,6 +213,33 @@ func (m MultiSoftmax) LossGrad(outputs, targets []float32) []float32 {
 	return grad
 }
 
+// LossHessian computes a block-diagonal Hessian matrix.
+func (m MultiSoftmax) LossHessian(outputs, targets []float32) *Hessian {
+	size := 0
+	for _, s := range m.Sizes {
+		size += s
+	}
+
+	res := &Hessian{
+		Dim:  size,
+		Data: make([]float32, size*size),
+	}
+	offset := 0
+	for _, size := range m.Sizes {
+		h := Softmax{}.LossHessian(outputs[:size], targets[:size])
+		for i := 0; i < size; i++ {
+			for j := 0; j < size; j++ {
+				x := h.Data[j+i*h.Dim]
+				res.Data[j+offset+(i+offset)*res.Dim] = x
+			}
+		}
+		offset += size
+		outputs = outputs[size:]
+		targets = targets[size:]
+	}
+	return res
+}
+
 type Sigmoid struct{}
 
 // Sample samples a the logistic distribution.
