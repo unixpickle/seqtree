@@ -17,11 +17,13 @@ func main() {
 	testDataset := mnist.LoadTestingDataSet()
 
 	encoder := NewEncoder()
-	encoder.Model.Load("encoder.json")
+	encoder.Layer1.Load("encoder1.json")
+	encoder.Layer2.Load("encoder2.json")
 	if encoder.NeedsTraining() {
 		log.Println("Training encoder...")
 		TrainEncoder(encoder, dataset)
-		encoder.Model.Save("encoder.json")
+		encoder.Layer1.Save("encoder1.json")
+		encoder.Layer2.Save("encoder2.json")
 	}
 	log.Println("Saving encoder reconstructions...")
 	GenerateReconstructions(testDataset, encoder)

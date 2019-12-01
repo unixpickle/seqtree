@@ -163,6 +163,56 @@ func (s Softmax) logSoftmax(logits []float32) []float32 {
 	return res
 }
 
+// MultiSoftmax is a softmax loss where each output
+// contains multiple distinct softmax decisions.
+type MultiSoftmax struct {
+	// Sizes is the number of options for each softmax.
+	Sizes []int
+}
+
+// Sample samples the softmax distributions from logits.
+func (m MultiSoftmax) Sample(outputs []float32) []int {
+	var samples []int
+	for _, size := range m.Sizes {
+		samples = append(samples, Softmax{}.Sample(outputs[:size]))
+		outputs = outputs[size:]
+	}
+	if len(outputs) != 0 {
+		panic("incorrect input size")
+	}
+	return samples
+}
+
+// Loss computes the loss function given output logits and
+// target probabilities.
+//
+// The resulting loss is a sum of all the softmax losses.
+func (m MultiSoftmax) Loss(outputs, targets []float32) float32 {
+	var total float32
+	for _, size := range m.Sizes {
+		total += Softmax{}.Loss(outputs[:size], targets[:size])
+		outputs = outputs[size:]
+		targets = targets[size:]
+	}
+	if len(outputs) != 0 {
+		println(len(outputs))
+		panic("incorrect input size")
+	}
+	return total
+}
+
+// LossGrad computes the gradient of the softmax losses
+// with respect to the outputs.
+func (m MultiSoftmax) LossGrad(outputs, targets []float32) []float32 {
+	var grad []float32
+	for _, size := range m.Sizes {
+		grad = append(grad, Softmax{}.LossGrad(outputs[:size], targets[:size])...)
+		outputs = outputs[size:]
+		targets = targets[size:]
+	}
+	return grad
+}
+
 type Sigmoid struct{}
 
 // Sample samples a the logistic distribution.
