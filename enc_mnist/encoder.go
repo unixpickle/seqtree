@@ -82,7 +82,7 @@ func trainEncoderLayer2(e *Encoder, ds mnist.DataSet) {
 
 	builder := seqtree.Builder{
 		Heuristic:       seqtree.GradientHeuristic{Loss: lossFunc},
-		Depth:           5,
+		Depth:           6,
 		MinSplitSamples: 10,
 		MaxUnion:        30,
 		Horizons:        []int{0},
