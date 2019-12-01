@@ -68,7 +68,8 @@ func trainEncoderLayer1(e *Encoder, ds mnist.DataSet) {
 
 		e.Layer1.Add(tree, 1.0)
 
-		log.Printf("tree %d: loss=%f delta=%f", len(e.Layer1.Trees)-1, loss/batch, -delta)
+		log.Printf("tree %d: loss=%f delta=%f leaves=%d", len(e.Layer1.Trees)-1, loss/batch, -delta,
+			len(tree.Leaves()))
 	}
 }
 
@@ -113,7 +114,8 @@ func trainEncoderLayer2(e *Encoder, ds mnist.DataSet) {
 
 		e.Layer2.Add(tree, 1.0)
 
-		log.Printf("tree %d: loss=%f delta=%f", len(e.Layer2.Trees)-1, loss/batch, -delta)
+		log.Printf("tree %d: loss=%f delta=%f leaves=%d", len(e.Layer2.Trees)-1, loss/batch, -delta,
+			len(tree.Leaves()))
 	}
 }
 
