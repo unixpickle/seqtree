@@ -15,7 +15,7 @@ const (
 
 	EncodingDim1    = 40
 	EncodingDim2    = 20
-	EncodingOptions = 8
+	EncodingOptions = 16
 )
 
 func TrainEncoder(e *Encoder, ds mnist.DataSet) {
@@ -32,7 +32,7 @@ func trainEncoderLayer1(e *Encoder, ds mnist.DataSet) {
 
 	builder := seqtree.Builder{
 		Heuristic:       seqtree.GradientHeuristic{Loss: seqtree.Sigmoid{}},
-		Depth:           4,
+		Depth:           5,
 		MinSplitSamples: 10,
 		MaxUnion:        5,
 		Horizons:        []int{0},
@@ -42,7 +42,7 @@ func trainEncoderLayer1(e *Encoder, ds mnist.DataSet) {
 		MaxLeaves: EncodingOptions,
 	}
 
-	for e.NeedsTraining() {
+	for len(e.Layer1.Trees) < EncodingDim1 {
 		samples := generateEncodingSamples(ds, batch)
 		e.Layer1.EvaluateAll(samples)
 
