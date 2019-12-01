@@ -38,10 +38,17 @@ func (s Sequence) MeanLoss(l LossFunc) float32 {
 	return total / float32(len(s))
 }
 
+// A FeatureMap is a vector of boolean features.
+type FeatureMap interface {
+	Len() int
+	Get(i int) bool
+	Set(i int, v bool)
+}
+
 // Timestep represents a single timestep in a sequence.
 type Timestep struct {
 	// Features stores the current feature bitmap.
-	Features *Bitmap
+	Features FeatureMap
 
 	// Output is the current prediction parameter vector
 	// for this timestamp.

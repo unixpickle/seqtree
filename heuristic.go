@@ -217,13 +217,3 @@ func vecSamplesOutputDelta(h Heuristic, samples []vecSample) []float32 {
 	}
 	return h.LeafOutput(sum.Sum())
 }
-
-func (l *vecSample) BranchFeatureFast(stepsInPast, byteIdx int, bitMask byte) bool {
-	if stepsInPast > l.Index {
-		return byteIdx == -1
-	} else if byteIdx == -1 {
-		return false
-	}
-	ts := l.Sequence[l.Index-stepsInPast]
-	return ts.Features.bytes[byteIdx]&bitMask != 0
-}

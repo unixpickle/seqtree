@@ -511,15 +511,9 @@ func (b *Builder) featureSplitQuality(falses, trues []vecSample, sums *lossSums,
 
 func (b *Builder) evaluateFeature(samples []vecSample, f BranchFeature) (values []bool,
 	falses, trues int) {
-	byteIdx := f.Feature >> 3
-	bitMask := byte(1) << uint8(f.Feature&7)
-	if f.Feature == -1 {
-		byteIdx = -1
-	}
-
 	values = make([]bool, len(samples))
 	for i, s := range samples {
-		val := s.BranchFeatureFast(f.StepsInPast, byteIdx, bitMask)
+		val := s.BranchFeature(f)
 		values[i] = val
 		if val {
 			trues++
