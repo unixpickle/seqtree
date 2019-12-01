@@ -3,7 +3,6 @@ package main
 import (
 	"math/rand"
 
-	"github.com/unixpickle/mnist"
 	"github.com/unixpickle/seqtree"
 )
 
@@ -17,10 +16,11 @@ func NewSequenceModel() *SequenceModel {
 	}
 }
 
-func (s *SequenceModel) Timesteps(samples []mnist.Sample) []*seqtree.Timestep {
-	res := make([]*seqtree.Timestep, len(samples))
-	for i, x := range samples {
-		res[i] = sampleTimestep(NewBoolImgSample(x), rand.Intn(ImageSize), rand.Intn(ImageSize))
+func (s *SequenceModel) Timesteps(samples []BoolImg, n int) []*seqtree.Timestep {
+	res := make([]*seqtree.Timestep, n)
+	for i := 0; i < n; i++ {
+		img := samples[rand.Intn(len(samples))]
+		res[i] = sampleTimestep(img, rand.Intn(ImageSize), rand.Intn(ImageSize))
 	}
 	return res
 }
@@ -39,7 +39,7 @@ func (s *SequenceModel) Sample() []bool {
 }
 
 func (s *SequenceModel) AddTree(samples, validation []*seqtree.Timestep) (loss, delta float32) {
-	shrinkage := float32(0.1)
+	shrinkage := float32(0.5)
 	if len(s.Model.Trees) == 0 {
 		// Take a large initial step.
 		shrinkage = 1
@@ -101,16 +101,10 @@ func (s *SequenceModel) MeanLoss(samples []*seqtree.Timestep) float32 {
 
 func sampleTimestep(img BoolImg, x, y int) *seqtree.Timestep {
 	ts := &seqtree.Timestep{
-		Features: seqtree.NewBitmap(SequenceLength + ImageSize*2),
+		Features: &FeatureMap{Img: img, X: x, Y: y},
 		Output:   make([]float32, 1),
 		Target:   make([]float32, 1),
 	}
-	seq := img.Window(x, y)
-	for i, s := range seq {
-		ts.Features.Set(i, s)
-	}
-	ts.Features.Set(SequenceLength+x, true)
-	ts.Features.Set(SequenceLength+ImageSize+y, true)
 	if img.At(x, y) {
 		ts.Target[0] = 1
 	}

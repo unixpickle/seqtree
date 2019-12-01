@@ -12,20 +12,20 @@ import (
 	"github.com/unixpickle/mnist"
 )
 
-const Batch = 100000
+const Batch = 1000000
 
 func main() {
-	data := mnist.LoadTrainingDataSet()
-	testData := mnist.LoadTestingDataSet()
+	data := DatasetBoolImgs(mnist.LoadTrainingDataSet())
+	testData := DatasetBoolImgs(mnist.LoadTestingDataSet())
 
 	seqModel := NewSequenceModel()
 	seqModel.Model.Load("model.json")
 	for i := 0; true; i++ {
-		testSeqs := seqModel.Timesteps(CollectSamples(testData, Batch))
+		testSeqs := seqModel.Timesteps(testData, Batch)
 		testLoss := seqModel.MeanLoss(testSeqs)
 
-		trainSeqs := seqModel.Timesteps(CollectSamples(data, Batch))
-		validSeqs := seqModel.Timesteps(CollectSamples(data, Batch))
+		trainSeqs := seqModel.Timesteps(data, Batch)
+		validSeqs := seqModel.Timesteps(data, Batch)
 		loss, delta := seqModel.AddTree(trainSeqs, validSeqs)
 
 		log.Printf("tree %d: loss=%f delta=%f test=%f", len(seqModel.Model.Trees)-1, loss, -delta,
@@ -63,4 +63,12 @@ func GenerateSamples(s *SequenceModel) {
 	essentials.Must(err)
 	defer w.Close()
 	essentials.Must(png.Encode(w, img))
+}
+
+func DatasetBoolImgs(ds mnist.DataSet) []BoolImg {
+	res := make([]BoolImg, len(ds.Samples))
+	for i, s := range ds.Samples {
+		res[i] = NewBoolImgSample(s)
+	}
+	return res
 }
