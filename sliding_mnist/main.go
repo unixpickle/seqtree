@@ -5,7 +5,6 @@ import (
 	"image/color"
 	"image/png"
 	"log"
-	"math/rand"
 	"os"
 
 	"github.com/unixpickle/essentials"
@@ -33,14 +32,6 @@ func main() {
 		seqModel.Model.Save("model.json")
 		GenerateSamples(seqModel)
 	}
-}
-
-func CollectSamples(ds mnist.DataSet, n int) []mnist.Sample {
-	res := make([]mnist.Sample, n)
-	for i := 0; i < n; i++ {
-		res[i] = ds.Samples[rand.Intn(len(ds.Samples))]
-	}
-	return res
 }
 
 func GenerateSamples(s *SequenceModel) {
