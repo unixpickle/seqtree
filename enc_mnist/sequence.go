@@ -15,7 +15,7 @@ type SequenceModel struct {
 
 func NewSequenceModel() *SequenceModel {
 	res := &SequenceModel{}
-	for i := 0; i < EncodingDim2; i++ {
+	for i := 0; i < EncodingDim3; i++ {
 		res.Models = append(res.Models, &seqtree.Model{
 			BaseFeatures: i * EncodingOptions,
 		})

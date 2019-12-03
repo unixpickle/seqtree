@@ -71,4 +71,18 @@ func GenerateReconstructions(ds mnist.DataSet, e *Encoder) {
 		}
 		return vec
 	}, ds, 10, 4)
+	mnist.SaveReconstructionGrid("recon_l1.png", func(x []float64) []float64 {
+		vec := e.DecodeLayer1(e.EncodeLayer1(x))
+		for i, x := range vec {
+			vec[i] = 1 / (1 + math.Exp(-x))
+		}
+		return vec
+	}, ds, 10, 4)
+	mnist.SaveReconstructionGrid("recon_l2.png", func(x []float64) []float64 {
+		vec := e.DecodeLayer1(e.DecodeLayer2(e.EncodeLayer2(e.EncodeLayer1(x))))
+		for i, x := range vec {
+			vec[i] = 1 / (1 + math.Exp(-x))
+		}
+		return vec
+	}, ds, 10, 4)
 }

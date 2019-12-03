@@ -14,8 +14,9 @@ const (
 	ImageSize = 28
 	BatchSize = 30000
 
-	EncodingDim1    = 40
-	EncodingDim2    = 20
+	EncodingDim1    = 35
+	EncodingDim2    = 25
+	EncodingDim3    = 20
 	EncodingOptions = 16
 )
 
@@ -26,15 +27,16 @@ func TrainEncoder(e *Encoder, ds, testDs mnist.DataSet) {
 	if len(e.Layer2.Stages) < EncodingDim2 {
 		trainEncoderLayer2(e, ds, testDs)
 	}
+	if len(e.Layer3.Stages) < EncodingDim3 {
+		trainEncoderLayer3(e, ds, testDs)
+	}
 }
 
 func trainEncoderLayer1(e *Encoder, ds, testDs mnist.DataSet) {
 	sampleVecs := func(ds mnist.DataSet) [][]float32 {
-		var vecs [][]float32
-		for i := 0; i < BatchSize; i++ {
-			vecs = append(vecs, encodeSigmoid(ds.Samples[rand.Intn(len(ds.Samples))].Intensities))
-		}
-		return vecs
+		return makeSampleVecs(ds, BatchSize, func(d mnist.Sample) []float32 {
+			return encodeSigmoid(d.Intensities)
+		})
 	}
 	for len(e.Layer1.Stages) < EncodingDim1 {
 		vecs := sampleVecs(ds)
@@ -51,12 +53,9 @@ func trainEncoderLayer1(e *Encoder, ds, testDs mnist.DataSet) {
 
 func trainEncoderLayer2(e *Encoder, ds, testDs mnist.DataSet) {
 	sampleVecs := func(ds mnist.DataSet) [][]float32 {
-		var vecs [][]float32
-		for i := 0; i < BatchSize; i++ {
-			enc := e.EncodeLayer1(ds.Samples[rand.Intn(len(ds.Samples))].Intensities)
-			vecs = append(vecs, encodeOneHot(enc))
-		}
-		return vecs
+		return makeSampleVecs(ds, BatchSize, func(d mnist.Sample) []float32 {
+			return encodeOneHot(e.EncodeLayer1(d.Intensities))
+		})
 	}
 	for len(e.Layer2.Stages) < EncodingDim2 {
 		vecs := sampleVecs(ds)
@@ -68,6 +67,25 @@ func trainEncoderLayer2(e *Encoder, ds, testDs mnist.DataSet) {
 			NumClusters:   EncodingOptions,
 		}, vecs)
 		log.Printf("layer 2: step %d: loss=%f test=%f", len(e.Layer2.Stages)-1, loss, testLoss)
+	}
+}
+
+func trainEncoderLayer3(e *Encoder, ds, testDs mnist.DataSet) {
+	sampleVecs := func(ds mnist.DataSet) [][]float32 {
+		return makeSampleVecs(ds, BatchSize, func(d mnist.Sample) []float32 {
+			return encodeOneHot(e.EncodeLayer2(e.EncodeLayer1(d.Intensities)))
+		})
+	}
+	for len(e.Layer3.Stages) < EncodingDim3 {
+		vecs := sampleVecs(ds)
+		testVecs := sampleVecs(testDs)
+		loss := evaluateLoss(e.Layer3, vecs)
+		testLoss := evaluateLoss(e.Layer3, testVecs)
+		e.Layer3.AddStage(&seqtree.KMeans{
+			MaxIterations: 100,
+			NumClusters:   EncodingOptions,
+		}, vecs)
+		log.Printf("layer 3: step %d: loss=%f test=%f", len(e.Layer3.Stages)-1, loss, testLoss)
 	}
 }
 
@@ -83,9 +101,27 @@ func evaluateLoss(e *seqtree.ClusterEncoder, vecs [][]float32) float32 {
 	return res / float32(len(vecs))
 }
 
+func makeSampleVecs(ds mnist.DataSet, n int, f func(d mnist.Sample) []float32) [][]float32 {
+	vecs := make([][]float32, n)
+	var wg sync.WaitGroup
+	numProcs := runtime.GOMAXPROCS(0)
+	for i := 0; i < numProcs; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			for j := i; j < n; j += numProcs {
+				vecs[j] = f(ds.Samples[rand.Intn(len(ds.Samples))])
+			}
+		}(i)
+	}
+	wg.Wait()
+	return vecs
+}
+
 type Encoder struct {
 	Layer1 *seqtree.ClusterEncoder
 	Layer2 *seqtree.ClusterEncoder
+	Layer3 *seqtree.ClusterEncoder
 }
 
 func NewEncoder() *Encoder {
@@ -100,12 +136,16 @@ func NewEncoder() *Encoder {
 		Layer2: &seqtree.ClusterEncoder{
 			Loss: &seqtree.MultiSoftmax{Sizes: sizes},
 		},
+		Layer3: &seqtree.ClusterEncoder{
+			Loss: &seqtree.MultiSoftmax{Sizes: sizes[:EncodingDim2]},
+		},
 	}
 }
 
 func (e *Encoder) NeedsTraining() bool {
 	return len(e.Layer1.Stages) < EncodingDim1 ||
-		len(e.Layer2.Stages) < EncodingDim2
+		len(e.Layer2.Stages) < EncodingDim2 ||
+		len(e.Layer3.Stages) < EncodingDim3
 }
 
 func (e *Encoder) EncodeLayer1(image []float64) []int {
@@ -116,8 +156,12 @@ func (e *Encoder) EncodeLayer2(intSeq []int) []int {
 	return e.Layer2.Encode(encodeOneHot(intSeq))
 }
 
+func (e *Encoder) EncodeLayer3(intSeq []int) []int {
+	return e.Layer3.Encode(encodeOneHot(intSeq))
+}
+
 func (e *Encoder) Encode(image []float64) []int {
-	return e.EncodeLayer2(e.EncodeLayer1(image))
+	return e.EncodeLayer3(e.EncodeLayer2(e.EncodeLayer1(image)))
 }
 
 func (e *Encoder) EncodeBatch(ds mnist.DataSet, n int) [][]int {
@@ -149,23 +193,16 @@ func (e *Encoder) DecodeLayer1(seq []int) []float64 {
 
 func (e *Encoder) DecodeLayer2(seq []int) []int {
 	params := e.Layer2.Decode(seq)
-	res := make([]int, EncodingDim1)
-	for i := range res {
-		maxIdx := 0
-		maxValue := params[i*EncodingOptions]
-		for j, x := range params[i*EncodingOptions : (i+1)*EncodingOptions] {
-			if x > maxValue {
-				maxValue = x
-				maxIdx = j
-			}
-		}
-		res[i] = maxIdx
-	}
-	return res
+	return decodeOneHot(params)
+}
+
+func (e *Encoder) DecodeLayer3(seq []int) []int {
+	params := e.Layer3.Decode(seq)
+	return decodeOneHot(params)
 }
 
 func (e *Encoder) Decode(seq []int) []float64 {
-	return e.DecodeLayer1(e.DecodeLayer2(seq))
+	return e.DecodeLayer1(e.DecodeLayer2(e.DecodeLayer3(seq)))
 }
 
 func encodeSigmoid(seq []float64) []float32 {
@@ -182,6 +219,22 @@ func encodeOneHot(seq []int) []float32 {
 	res := make([]float32, len(seq)*EncodingOptions)
 	for i, x := range seq {
 		res[i*EncodingOptions+x] = 1
+	}
+	return res
+}
+
+func decodeOneHot(params []float32) []int {
+	res := make([]int, len(params)/EncodingOptions)
+	for i := range res {
+		maxIdx := 0
+		maxValue := params[i*EncodingOptions]
+		for j, x := range params[i*EncodingOptions : (i+1)*EncodingOptions] {
+			if x > maxValue {
+				maxValue = x
+				maxIdx = j
+			}
+		}
+		res[i] = maxIdx
 	}
 	return res
 }
