@@ -90,14 +90,31 @@ func trainEncoderLayer3(e *Encoder, ds, testDs mnist.DataSet) {
 }
 
 func evaluateLoss(e *seqtree.ClusterEncoder, vecs [][]float32) float32 {
+	var lock sync.Mutex
 	var res float32
-	for _, v := range vecs {
-		dec := make([]float32, len(v))
-		if len(e.Stages) > 0 {
-			dec = e.Decode(e.Encode(v))
-		}
-		res += e.Loss.Loss(dec, v)
+
+	var wg sync.WaitGroup
+	numProcs := runtime.GOMAXPROCS(0)
+	for i := 0; i < numProcs; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			var localSum float32
+			for j := i; j < len(vecs); j += numProcs {
+				v := vecs[j]
+				dec := make([]float32, len(v))
+				if len(e.Stages) > 0 {
+					dec = e.Decode(e.Encode(v))
+				}
+				res += e.Loss.Loss(dec, v)
+			}
+			lock.Lock()
+			res += localSum
+			lock.Unlock()
+		}(i)
 	}
+	wg.Wait()
+
 	return res / float32(len(vecs))
 }
 
