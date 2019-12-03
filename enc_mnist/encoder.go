@@ -12,7 +12,7 @@ import (
 
 const (
 	ImageSize = 28
-	BatchSize = 5000
+	BatchSize = 30000
 
 	EncodingDim1    = 5
 	EncodingDim2    = 5
