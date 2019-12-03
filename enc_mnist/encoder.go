@@ -12,7 +12,7 @@ import (
 
 const (
 	ImageSize = 28
-	BatchSize = 1000
+	BatchSize = 5000
 
 	EncodingDim1    = 40
 	EncodingDim2    = 20
@@ -34,12 +34,12 @@ func trainEncoderLayer1(e *Encoder, ds mnist.DataSet) {
 		for i := 0; i < BatchSize; i++ {
 			vecs = append(vecs, encodeSigmoid(ds.Samples[rand.Intn(len(ds.Samples))].Intensities))
 		}
+		loss := evaluateLoss(e.Layer1, vecs)
 		e.Layer1.AddStage(&seqtree.KMeans{
 			MaxIterations: 100,
 			NumClusters:   EncodingOptions,
 		}, vecs)
-		log.Printf("layer 1: step %d: loss=%f", len(e.Layer1.Stages)-1,
-			evaluateLoss(e.Layer1, vecs))
+		log.Printf("layer 1: step %d: loss=%f", len(e.Layer1.Stages)-1, loss)
 	}
 }
 
@@ -50,19 +50,22 @@ func trainEncoderLayer2(e *Encoder, ds mnist.DataSet) {
 			enc := e.EncodeLayer1(ds.Samples[rand.Intn(len(ds.Samples))].Intensities)
 			vecs = append(vecs, encodeOneHot(enc))
 		}
+		loss := evaluateLoss(e.Layer2, vecs)
 		e.Layer2.AddStage(&seqtree.KMeans{
 			MaxIterations: 100,
 			NumClusters:   EncodingOptions,
 		}, vecs)
-		log.Printf("layer 2: step %d: loss=%f", len(e.Layer2.Stages)-1,
-			evaluateLoss(e.Layer2, vecs))
+		log.Printf("layer 2: step %d: loss=%f", len(e.Layer2.Stages)-1, loss)
 	}
 }
 
 func evaluateLoss(e *seqtree.ClusterEncoder, vecs [][]float32) float32 {
 	var res float32
 	for _, v := range vecs {
-		dec := e.Decode(e.Encode(nil, v))
+		dec := make([]float32, len(v))
+		if len(e.Stages) > 0 {
+			dec = e.Decode(e.Encode(v))
+		}
 		res += e.Loss.Loss(dec, v)
 	}
 	return res / float32(len(vecs))
@@ -94,11 +97,11 @@ func (e *Encoder) NeedsTraining() bool {
 }
 
 func (e *Encoder) EncodeLayer1(image []float64) []int {
-	return e.Layer1.Encode(nil, encodeSigmoid(image))
+	return e.Layer1.Encode(encodeSigmoid(image))
 }
 
 func (e *Encoder) EncodeLayer2(intSeq []int) []int {
-	return e.Layer2.Encode(nil, encodeOneHot(intSeq))
+	return e.Layer2.Encode(encodeOneHot(intSeq))
 }
 
 func (e *Encoder) Encode(image []float64) []int {

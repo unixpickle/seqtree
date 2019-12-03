@@ -7,6 +7,8 @@ import (
 	"math/rand"
 	"os"
 	"reflect"
+	"runtime"
+	"sync"
 
 	"github.com/pkg/errors"
 )
@@ -45,12 +47,22 @@ func (c *ClusterEncoder) Load(path string) error {
 }
 
 func (c *ClusterEncoder) AddStage(k *KMeans, data [][]float32) {
-	var grads [][]float32
 	zeroOutput := make([]float32, len(data[0]))
-	for _, x := range data {
-		_, res := c.encodeWithResidual(zeroOutput, x)
-		grads = append(grads, c.Loss.LossGrad(res, x))
+	grads := make([][]float32, len(data))
+
+	var wg sync.WaitGroup
+	numProcs := runtime.GOMAXPROCS(0)
+	for i := 0; i < numProcs; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			for j := i; j < len(data); j += numProcs {
+				_, res := c.encodeWithResidual(zeroOutput, data[j])
+				grads[j] = c.Loss.LossGrad(res, data[j])
+			}
+		}(i)
 	}
+	wg.Wait()
 
 	centers := k.Cluster(grads)
 	clusters := &Clusters{
@@ -83,8 +95,8 @@ func (c *ClusterEncoder) AddStage(k *KMeans, data [][]float32) {
 	c.Stages = append(c.Stages, clusters)
 }
 
-func (c *ClusterEncoder) Encode(outputs, targets []float32) []int {
-	res, _ := c.encodeWithResidual(outputs, targets)
+func (c *ClusterEncoder) Encode(targets []float32) []int {
+	res, _ := c.encodeWithResidual(nil, targets)
 	return res
 }
 
@@ -188,6 +200,7 @@ func (k *KMeans) initialize(data [][]float32) [][]float32 {
 func (k *KMeans) iterate(data, centers [][]float32) [][]float32 {
 	dim := len(centers[0])
 
+	var lock sync.Mutex
 	counts := make([]int, len(centers))
 	sums := make([]*kahanSum, len(centers))
 	for i := range sums {
@@ -195,11 +208,35 @@ func (k *KMeans) iterate(data, centers [][]float32) [][]float32 {
 	}
 
 	c := &Clusters{Centers: centers}
-	for _, x := range data {
-		i, _ := c.Find(x)
-		sums[i].Add(x)
-		counts[i] += 1
+
+	numProcs := runtime.GOMAXPROCS(0)
+	var wg sync.WaitGroup
+	for i := 0; i < numProcs; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			localCounts := make([]int, len(centers))
+			localSums := make([]*kahanSum, len(centers))
+			for i := range localSums {
+				localSums[i] = newKahanSum(dim)
+			}
+			for j := i; j < len(data); j += numProcs {
+				x := data[j]
+				cluster, _ := c.Find(x)
+				localSums[cluster].Add(x)
+				localCounts[cluster] += 1
+			}
+			lock.Lock()
+			for i, ls := range localSums {
+				sums[i].Add(ls.Sum())
+			}
+			for i, x := range localCounts {
+				counts[i] += x
+			}
+			lock.Unlock()
+		}(i)
 	}
+	wg.Wait()
 
 	res := make([][]float32, len(sums))
 	for i, s := range sums {
