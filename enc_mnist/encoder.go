@@ -14,8 +14,8 @@ const (
 	ImageSize = 28
 	BatchSize = 30000
 
-	EncodingDim1    = 5
-	EncodingDim2    = 5
+	EncodingDim1    = 40
+	EncodingDim2    = 20
 	EncodingOptions = 16
 )
 
