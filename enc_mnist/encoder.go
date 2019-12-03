@@ -58,7 +58,7 @@ func trainEncoderLayer2(e *Encoder, ds, testDs mnist.DataSet) {
 		}
 		return vecs
 	}
-	for len(e.Layer2.Stages) < EncodingDim1 {
+	for len(e.Layer2.Stages) < EncodingDim2 {
 		vecs := sampleVecs(ds)
 		testVecs := sampleVecs(testDs)
 		loss := evaluateLoss(e.Layer2, vecs)
