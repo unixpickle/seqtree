@@ -21,7 +21,7 @@ func main() {
 	encoder.Layer2.Load("encoder2.json")
 	if encoder.NeedsTraining() {
 		log.Println("Training encoder...")
-		TrainEncoder(encoder, dataset)
+		TrainEncoder(encoder, dataset, testDataset)
 		encoder.Layer1.Save("encoder1.json")
 		encoder.Layer2.Save("encoder2.json")
 	}

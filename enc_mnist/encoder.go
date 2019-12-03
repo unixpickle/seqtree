@@ -19,43 +19,55 @@ const (
 	EncodingOptions = 16
 )
 
-func TrainEncoder(e *Encoder, ds mnist.DataSet) {
+func TrainEncoder(e *Encoder, ds, testDs mnist.DataSet) {
 	if len(e.Layer1.Stages) < EncodingDim1 {
-		trainEncoderLayer1(e, ds)
+		trainEncoderLayer1(e, ds, testDs)
 	}
 	if len(e.Layer2.Stages) < EncodingDim2 {
-		trainEncoderLayer2(e, ds)
+		trainEncoderLayer2(e, ds, testDs)
 	}
 }
 
-func trainEncoderLayer1(e *Encoder, ds mnist.DataSet) {
-	for len(e.Layer1.Stages) < EncodingDim1 {
+func trainEncoderLayer1(e *Encoder, ds, testDs mnist.DataSet) {
+	sampleVecs := func(ds mnist.DataSet) [][]float32 {
 		var vecs [][]float32
 		for i := 0; i < BatchSize; i++ {
 			vecs = append(vecs, encodeSigmoid(ds.Samples[rand.Intn(len(ds.Samples))].Intensities))
 		}
+		return vecs
+	}
+	for len(e.Layer1.Stages) < EncodingDim1 {
+		vecs := sampleVecs(ds)
+		testVecs := sampleVecs(testDs)
 		loss := evaluateLoss(e.Layer1, vecs)
+		testLoss := evaluateLoss(e.Layer1, testVecs)
 		e.Layer1.AddStage(&seqtree.KMeans{
 			MaxIterations: 100,
 			NumClusters:   EncodingOptions,
 		}, vecs)
-		log.Printf("layer 1: step %d: loss=%f", len(e.Layer1.Stages)-1, loss)
+		log.Printf("layer 1: step %d: loss=%f test=%f", len(e.Layer1.Stages)-1, loss, testLoss)
 	}
 }
 
-func trainEncoderLayer2(e *Encoder, ds mnist.DataSet) {
-	for len(e.Layer2.Stages) < EncodingDim1 {
+func trainEncoderLayer2(e *Encoder, ds, testDs mnist.DataSet) {
+	sampleVecs := func(ds mnist.DataSet) [][]float32 {
 		var vecs [][]float32
 		for i := 0; i < BatchSize; i++ {
 			enc := e.EncodeLayer1(ds.Samples[rand.Intn(len(ds.Samples))].Intensities)
 			vecs = append(vecs, encodeOneHot(enc))
 		}
+		return vecs
+	}
+	for len(e.Layer2.Stages) < EncodingDim1 {
+		vecs := sampleVecs(ds)
+		testVecs := sampleVecs(testDs)
 		loss := evaluateLoss(e.Layer2, vecs)
+		testLoss := evaluateLoss(e.Layer2, testVecs)
 		e.Layer2.AddStage(&seqtree.KMeans{
 			MaxIterations: 100,
 			NumClusters:   EncodingOptions,
 		}, vecs)
-		log.Printf("layer 2: step %d: loss=%f", len(e.Layer2.Stages)-1, loss)
+		log.Printf("layer 2: step %d: loss=%f test=%f", len(e.Layer2.Stages)-1, loss, testLoss)
 	}
 }
 
