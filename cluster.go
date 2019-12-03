@@ -1,20 +1,118 @@
 package seqtree
 
 import (
+	"encoding/json"
+	"io/ioutil"
 	"math"
 	"math/rand"
+	"os"
+	"reflect"
+
+	"github.com/pkg/errors"
 )
+
+type ClusterEncoder struct {
+	Stages []*Clusters
+	Loss   GradLossFunc `json:"-"`
+}
+
+// Save saves the model to a JSON file.
+func (c *ClusterEncoder) Save(path string) error {
+	data, err := json.Marshal(c)
+	if err != nil {
+		return errors.Wrap(err, "save encoder")
+	}
+	if err := ioutil.WriteFile(path, data, 0755); err != nil {
+		return errors.Wrap(err, "save encoder")
+	}
+	return nil
+}
+
+// Load loads the model from a JSON file.
+// Does not fail with an error if the file does not exist.
+func (c *ClusterEncoder) Load(path string) error {
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return errors.Wrap(err, "load encoder")
+	}
+	if err := json.Unmarshal(data, c); err != nil {
+		return errors.Wrap(err, "load encoder")
+	}
+	return nil
+}
+
+func (c *ClusterEncoder) AddStage(k *KMeans, data [][]float32) {
+	var grads [][]float32
+	zeroOutput := make([]float32, len(data[0]))
+	for _, x := range data {
+		_, res := c.encodeWithResidual(zeroOutput, x)
+		grads = append(grads, c.Loss.LossGrad(res, x))
+	}
+
+	centers := k.Cluster(grads)
+	clusters := &Clusters{
+		Centers: centers,
+		Deltas:  make([][]float32, len(centers)),
+	}
+
+	clusterData := map[int][]*TimestepSample{}
+	for i, x := range grads {
+		idx, _ := clusters.Find(x)
+		ts := &Timestep{
+			Output: x,
+			Target: data[i],
+		}
+		clusterData[idx] = append(clusterData[idx], &TimestepSample{Sequence: Sequence{ts}})
+	}
+	for i, center := range centers {
+		delta := append([]float32{}, center...)
+		for i := range delta {
+			delta[i] *= -1
+		}
+
+		// Scale the delta to reduce the loss as much as possible.
+		tree := &Tree{Leaf: &Leaf{OutputDelta: delta}}
+		ScaleOptimalStep(clusterData[i], tree, c.Loss, 40.0, 1, 32)
+
+		clusters.Deltas[i] = tree.Leaf.OutputDelta
+	}
+
+	c.Stages = append(c.Stages, clusters)
+}
+
+func (c *ClusterEncoder) Encode(outputs, targets []float32) []int {
+	res, _ := c.encodeWithResidual(outputs, targets)
+	return res
+}
+
+func (c *ClusterEncoder) Decode(code []int) []float32 {
+	res := newKahanSum(len(c.Stages[0].Deltas[0]))
+	for i, x := range code {
+		res.Add(c.Stages[i].Deltas[x])
+	}
+	return res.Sum()
+}
+
+func (c *ClusterEncoder) encodeWithResidual(outputs, targets []float32) ([]int, []float32) {
+	if outputs == nil {
+		outputs = make([]float32, len(targets))
+	}
+	var result []int
+	for _, stage := range c.Stages {
+		lossGrad := c.Loss.LossGrad(outputs, targets)
+		idx, _ := stage.Find(lossGrad)
+		outputs = addDelta(outputs, stage.Deltas[idx], 1.0)
+		result = append(result, idx)
+	}
+	return result, outputs
+}
 
 type Clusters struct {
 	Deltas  [][]float32
 	Centers [][]float32
-}
-
-// Evaluate finds the output delta corresponding to the
-// closest center to v.
-func (c *Clusters) Evaluate(v []float32) []float32 {
-	idx, _ := c.Find(v)
-	return c.Deltas[idx]
 }
 
 // Find finds the closest center index to v and also
@@ -41,9 +139,13 @@ type KMeans struct {
 // Cluster clusters the data points into centers.
 func (k *KMeans) Cluster(data [][]float32) [][]float32 {
 	result := k.initialize(data)
-	// TODO: early stopping if converges.
+	lastCenters := result
 	for i := 0; i < k.MaxIterations; i++ {
 		result = k.iterate(data, result)
+		if reflect.DeepEqual(result, lastCenters) {
+			break
+		}
+		lastCenters = result
 	}
 	return result
 }
