@@ -14,8 +14,9 @@ import (
 )
 
 type ClusterEncoder struct {
-	Stages []*Clusters
-	Loss   GradLossFunc `json:"-"`
+	Stages  []*Clusters
+	Weights []float32
+	Loss    GradLossFunc `json:"-"`
 }
 
 // Save saves the model to a JSON file.
@@ -48,7 +49,11 @@ func (c *ClusterEncoder) Load(path string) error {
 
 func (c *ClusterEncoder) AddStage(k *KMeans, data [][]float32) {
 	zeroOutput := make([]float32, len(data[0]))
+	prevOutputs := make([][]float32, len(data))
 	grads := make([][]float32, len(data))
+
+	var lock sync.Mutex
+	originalLoss := newKahanSum(1)
 
 	var wg sync.WaitGroup
 	numProcs := runtime.GOMAXPROCS(0)
@@ -56,10 +61,16 @@ func (c *ClusterEncoder) AddStage(k *KMeans, data [][]float32) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
+			localSum := newKahanSum(1)
 			for j := i; j < len(data); j += numProcs {
-				_, res := c.encodeWithResidual(zeroOutput, data[j])
-				grads[j] = c.Loss.LossGrad(res, data[j])
+				_, prevOutput := c.encodeWithOutput(zeroOutput, data[j])
+				grads[j] = c.Loss.LossGrad(prevOutput, data[j])
+				prevOutputs[j] = prevOutput
+				localSum.Add([]float32{c.Loss.Loss(prevOutput, data[j])})
 			}
+			lock.Lock()
+			originalLoss.Add(localSum.Sum())
+			lock.Unlock()
 		}(i)
 	}
 	wg.Wait()
@@ -71,14 +82,16 @@ func (c *ClusterEncoder) AddStage(k *KMeans, data [][]float32) {
 	}
 
 	clusterData := map[int][]*TimestepSample{}
-	for i, x := range grads {
-		idx, _ := clusters.Find(x)
+	for i, x := range prevOutputs {
+		idx, _ := clusters.Find(grads[i])
 		ts := &Timestep{
 			Output: x,
 			Target: data[i],
 		}
 		clusterData[idx] = append(clusterData[idx], &TimestepSample{Sequence: Sequence{ts}})
 	}
+
+	newLoss := newKahanSum(1)
 	for i, center := range centers {
 		delta := append([]float32{}, center...)
 		for i := range delta {
@@ -88,15 +101,21 @@ func (c *ClusterEncoder) AddStage(k *KMeans, data [][]float32) {
 		// Scale the delta to reduce the loss as much as possible.
 		tree := &Tree{Leaf: &Leaf{OutputDelta: delta}}
 		ScaleOptimalStep(clusterData[i], tree, c.Loss, 40.0, 1, 32)
-
-		clusters.Deltas[i] = tree.Leaf.OutputDelta
+		clusters.Deltas[i] = delta
+		for _, s := range clusterData[i] {
+			ts := s.Timestep()
+			newLoss.Add([]float32{c.Loss.Loss(addDelta(ts.Output, delta, 1), ts.Target)})
+		}
 	}
 
+	weight := (originalLoss.Sum()[0] - newLoss.Sum()[0]) / float32(len(data))
+
 	c.Stages = append(c.Stages, clusters)
+	c.Weights = append(c.Weights, weight)
 }
 
 func (c *ClusterEncoder) Encode(targets []float32) []int {
-	res, _ := c.encodeWithResidual(nil, targets)
+	res, _ := c.encodeWithOutput(nil, targets)
 	return res
 }
 
@@ -108,7 +127,7 @@ func (c *ClusterEncoder) Decode(code []int) []float32 {
 	return res.Sum()
 }
 
-func (c *ClusterEncoder) encodeWithResidual(outputs, targets []float32) ([]int, []float32) {
+func (c *ClusterEncoder) encodeWithOutput(outputs, targets []float32) ([]int, []float32) {
 	if outputs == nil {
 		outputs = make([]float32, len(targets))
 	}

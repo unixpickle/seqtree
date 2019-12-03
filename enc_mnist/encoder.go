@@ -14,8 +14,8 @@ const (
 	ImageSize = 28
 	BatchSize = 5000
 
-	EncodingDim1    = 40
-	EncodingDim2    = 20
+	EncodingDim1    = 5
+	EncodingDim2    = 5
 	EncodingOptions = 16
 )
 
@@ -50,6 +50,14 @@ func trainEncoderLayer1(e *Encoder, ds, testDs mnist.DataSet) {
 }
 
 func trainEncoderLayer2(e *Encoder, ds, testDs mnist.DataSet) {
+	var sizes []int
+	for i := 0; i < EncodingDim1; i++ {
+		sizes = append(sizes, EncodingOptions)
+	}
+	e.Layer2.Loss = &seqtree.MultiSoftmax{
+		Sizes:   sizes,
+		Weights: e.Layer1.Weights,
+	}
 	sampleVecs := func(ds mnist.DataSet) [][]float32 {
 		var vecs [][]float32
 		for i := 0; i < BatchSize; i++ {
@@ -98,7 +106,7 @@ func NewEncoder() *Encoder {
 			Loss: seqtree.Sigmoid{},
 		},
 		Layer2: &seqtree.ClusterEncoder{
-			Loss: seqtree.MultiSoftmax{Sizes: sizes},
+			Loss: &seqtree.MultiSoftmax{Sizes: sizes},
 		},
 	}
 }

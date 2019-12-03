@@ -168,10 +168,14 @@ func (s Softmax) logSoftmax(logits []float32) []float32 {
 type MultiSoftmax struct {
 	// Sizes is the number of options for each softmax.
 	Sizes []int
+
+	// Weights, if non-nil, specifies a scalar by which
+	// each softmax loss is weighted.
+	Weights []float32
 }
 
 // Sample samples the softmax distributions from logits.
-func (m MultiSoftmax) Sample(outputs []float32) []int {
+func (m *MultiSoftmax) Sample(outputs []float32) []int {
 	var samples []int
 	for _, size := range m.Sizes {
 		samples = append(samples, Softmax{}.Sample(outputs[:size]))
@@ -187,10 +191,14 @@ func (m MultiSoftmax) Sample(outputs []float32) []int {
 // target probabilities.
 //
 // The resulting loss is a sum of all the softmax losses.
-func (m MultiSoftmax) Loss(outputs, targets []float32) float32 {
+func (m *MultiSoftmax) Loss(outputs, targets []float32) float32 {
 	var total float32
-	for _, size := range m.Sizes {
-		total += Softmax{}.Loss(outputs[:size], targets[:size])
+	for i, size := range m.Sizes {
+		l := Softmax{}.Loss(outputs[:size], targets[:size])
+		if m.Weights != nil {
+			l *= m.Weights[i]
+		}
+		total += l
 		outputs = outputs[size:]
 		targets = targets[size:]
 	}
@@ -203,10 +211,17 @@ func (m MultiSoftmax) Loss(outputs, targets []float32) float32 {
 
 // LossGrad computes the gradient of the softmax losses
 // with respect to the outputs.
-func (m MultiSoftmax) LossGrad(outputs, targets []float32) []float32 {
+func (m *MultiSoftmax) LossGrad(outputs, targets []float32) []float32 {
 	var grad []float32
-	for _, size := range m.Sizes {
-		grad = append(grad, Softmax{}.LossGrad(outputs[:size], targets[:size])...)
+	for i, size := range m.Sizes {
+		g := Softmax{}.LossGrad(outputs[:size], targets[:size])
+		if m.Weights != nil {
+			w := m.Weights[i]
+			for j, x := range g {
+				g[j] = x * w
+			}
+		}
+		grad = append(grad, g...)
 		outputs = outputs[size:]
 		targets = targets[size:]
 	}
@@ -214,7 +229,7 @@ func (m MultiSoftmax) LossGrad(outputs, targets []float32) []float32 {
 }
 
 // LossHessian computes a block-diagonal Hessian matrix.
-func (m MultiSoftmax) LossHessian(outputs, targets []float32) *Hessian {
+func (m *MultiSoftmax) LossHessian(outputs, targets []float32) *Hessian {
 	size := 0
 	for _, s := range m.Sizes {
 		size += s
@@ -225,12 +240,16 @@ func (m MultiSoftmax) LossHessian(outputs, targets []float32) *Hessian {
 		Data: make([]float32, size*size),
 	}
 	offset := 0
-	for _, size := range m.Sizes {
+	for i, size := range m.Sizes {
 		h := Softmax{}.LossHessian(outputs[:size], targets[:size])
+		w := float32(1)
+		if m.Weights != nil {
+			w = m.Weights[i]
+		}
 		for i := 0; i < size; i++ {
 			for j := 0; j < size; j++ {
 				x := h.Data[j+i*h.Dim]
-				res.Data[j+offset+(i+offset)*res.Dim] = x
+				res.Data[j+offset+(i+offset)*res.Dim] = x * w
 			}
 		}
 		offset += size
