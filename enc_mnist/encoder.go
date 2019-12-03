@@ -44,7 +44,7 @@ func trainEncoderLayer1(e *Encoder, ds mnist.DataSet) {
 }
 
 func trainEncoderLayer2(e *Encoder, ds mnist.DataSet) {
-	for len(e.Layer2.Stages) < EncodingDim1 {
+	for len(e.Layer2.Stages) < EncodingDim2 {
 		var vecs [][]float32
 		for i := 0; i < BatchSize; i++ {
 			enc := e.EncodeLayer1(ds.Samples[rand.Intn(len(ds.Samples))].Intensities)
