@@ -101,11 +101,11 @@ func (c *ClusterEncoder) AddStage(k *KMeans, data [][]float32) {
 		if m, ok := c.Loss.(*MultiSoftmax); ok {
 			start := 0
 			for _, s := range m.Sizes {
-				scaleOptimalStepCluster(data, targets, delta, Softmax{}, 40.0, 32, start, s)
+				scaleOptimalStepCluster(data, targets, delta, Softmax{}, 100.0, 50, start, s)
 				start += s
 			}
 		} else {
-			scaleOptimalStepCluster(data, targets, delta, c.Loss, 40.0, 32, 0, 0)
+			scaleOptimalStepCluster(data, targets, delta, c.Loss, 100.0, 50, 0, 0)
 		}
 
 		clusters.Deltas[i] = delta
