@@ -28,24 +28,36 @@ func (h *Hessian) Apply(v []float32) []float32 {
 	return res
 }
 
-// ApplyInverse solves the equation Hx = v for x.
-func (h *Hessian) ApplyInverse(v []float32) []float32 {
-	x := make([]float32, len(v))
+// ApplyInverse solves the equation Hx = b for x.
+func (h *Hessian) ApplyInverse(b []float32) []float32 {
+	// Use the conjugate gradient method.
+	// See https://en.wikipedia.org/wiki/Conjugate_gradient_method.
 
-	// Perform h.Dim steps of gradient descent.
-	// In the future, this should probably use CG or some
-	// more efficient method.
-	for i := 0; i < h.Dim; i++ {
-		residual := vectorDifference(v, h.Apply(x))
-		product := h.Apply(residual)
-		divisor := vectorNormSquared(product)
-		if divisor == 0 {
+	earlyStopError := math.Sqrt(float64(vectorNormSquared(b))) * 1e-5
+
+	x := make([]float32, len(b))
+	r := vectorDifference(b, h.Apply(x))
+	p := r
+
+	// Hard-limit the number of iterations to avoid bad
+	// computation times for poorly conditioned problems.
+	for i := 0; i < h.Dim*2; i++ {
+		hp := h.Apply(p)
+		a := vectorDot(r, r) / vectorDot(p, hp)
+		nextX := addDelta(x, p, a)
+
+		// Use explicit update for r to avoid compounding
+		// error over many updates.
+		nextR := vectorDifference(b, h.Apply(nextX))
+		rMag := vectorNormSquared(nextR)
+
+		if math.Sqrt(float64(rMag)) < earlyStopError {
 			break
 		}
-		stepSize := vectorDot(residual, product) / divisor
-		for j, y := range residual {
-			x[j] += stepSize * y
-		}
+
+		beta := rMag / vectorNormSquared(r)
+		nextP := addDelta(nextR, p, beta)
+		x, r, p = nextX, nextR, nextP
 	}
 
 	return x
