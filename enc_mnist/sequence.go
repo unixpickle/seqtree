@@ -78,7 +78,7 @@ func (s *SequenceModel) AddTree(intSeqs [][]int) (loss, delta float32) {
 
 		builder := seqtree.Builder{
 			Heuristic: seqtree.HessianHeuristic{
-				Damping: 1.0,
+				Damping: 0.1,
 				Loss:    seqtree.Softmax{},
 			},
 			Depth:           5,
