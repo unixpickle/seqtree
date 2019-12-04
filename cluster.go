@@ -104,6 +104,10 @@ func (c *ClusterEncoder) AddStage(k *KMeans, data [][]float32) {
 				scaleOptimalStepCluster(data, targets, delta, Softmax{}, 100.0, 50, start, s)
 				start += s
 			}
+		} else if _, ok := c.Loss.(Sigmoid); ok {
+			for i := range delta {
+				scaleOptimalStepCluster(data, targets, delta, c.Loss, 100.0, 50, i, 1)
+			}
 		} else {
 			scaleOptimalStepCluster(data, targets, delta, c.Loss, 100.0, 50, 0, 0)
 		}
