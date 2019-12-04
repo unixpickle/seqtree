@@ -99,6 +99,54 @@ func ScaleOptimalStep(timesteps []*TimestepSample, t *Tree, l LossFunc, maxStep 
 	}
 }
 
+// scaleOptimalStepCluster is like ScaleOptimalStep, but
+// for a single delta applied to an entire cluster of
+// data.
+//
+// This can be used to only scale steps within a given
+// range, allowing for efficient steps with MultiSoftmax
+// and other block-diagonal loss functions.
+func scaleOptimalStepCluster(data, targets [][]float32, delta []float32, l LossFunc,
+	maxStep float32, iters, startIdx, length int) {
+	if length == 0 {
+		length = len(delta) - startIdx
+	}
+
+	scale := minimizeUnary(0, maxStep, iters, func(stepSize float32) float32 {
+		var lock sync.Mutex
+		var currentLoss float32
+
+		var wg sync.WaitGroup
+		numProcs := runtime.GOMAXPROCS(0)
+		for i := 0; i < numProcs; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				total := newKahanSum(1)
+				tmpAddition := []float32{0.0}
+				tmpOutput := make([]float32, length)
+				for j := i; j < len(data); j += numProcs {
+					sample := data[j][startIdx : startIdx+length]
+					target := targets[j][startIdx : startIdx+length]
+					for k, x := range sample {
+						tmpOutput[k] = x + stepSize*delta[k+startIdx]
+					}
+					tmpAddition[0] = l.Loss(tmpOutput, target)
+					total.Add(tmpAddition)
+				}
+				lock.Lock()
+				currentLoss += total.Sum()[0]
+				lock.Unlock()
+			}(i)
+		}
+		wg.Wait()
+		return currentLoss
+	})
+	for i := startIdx; i < startIdx+length; i++ {
+		delta[i] *= scale
+	}
+}
+
 // AvgLossDelta computes the average change in the loss
 // after taking a step.
 func AvgLossDelta(timesteps []*TimestepSample, t *Tree, l LossFunc, step float32) float32 {

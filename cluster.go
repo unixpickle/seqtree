@@ -81,14 +81,12 @@ func (c *ClusterEncoder) AddStage(k *KMeans, data [][]float32) {
 		Deltas:  make([][]float32, len(centers)),
 	}
 
-	clusterData := map[int][]*TimestepSample{}
+	clusterData := map[int][][]float32{}
+	clusterTargets := map[int][][]float32{}
 	for i, x := range prevOutputs {
 		idx, _ := clusters.Find(grads[i])
-		ts := &Timestep{
-			Output: x,
-			Target: data[i],
-		}
-		clusterData[idx] = append(clusterData[idx], &TimestepSample{Sequence: Sequence{ts}})
+		clusterData[idx] = append(clusterData[idx], x)
+		clusterTargets[idx] = append(clusterTargets[idx], data[i])
 	}
 
 	newLoss := newKahanSum(1)
@@ -98,13 +96,22 @@ func (c *ClusterEncoder) AddStage(k *KMeans, data [][]float32) {
 			delta[i] *= -1
 		}
 
-		// Scale the delta to reduce the loss as much as possible.
-		tree := &Tree{Leaf: &Leaf{OutputDelta: delta}}
-		ScaleOptimalStep(clusterData[i], tree, c.Loss, 40.0, 1, 32)
+		data := clusterData[i]
+		targets := clusterTargets[i]
+		if m, ok := c.Loss.(*MultiSoftmax); ok {
+			start := 0
+			for _, s := range m.Sizes {
+				scaleOptimalStepCluster(data, targets, delta, Softmax{}, 40.0, 32, start, s)
+				start += s
+			}
+		} else {
+			scaleOptimalStepCluster(data, targets, delta, c.Loss, 40.0, 32, 0, 0)
+		}
+
 		clusters.Deltas[i] = delta
-		for _, s := range clusterData[i] {
-			ts := s.Timestep()
-			newLoss.Add([]float32{c.Loss.Loss(addDelta(ts.Output, delta, 1), ts.Target)})
+		for j, x := range data {
+			t := targets[j]
+			newLoss.Add([]float32{c.Loss.Loss(addDelta(x, delta, 1), t)})
 		}
 	}
 
