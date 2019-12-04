@@ -14,9 +14,9 @@ const (
 	ImageSize = 28
 	BatchSize = 30000
 
-	EncodingDim1    = 35
-	EncodingDim2    = 25
-	EncodingDim3    = 20
+	EncodingDim1    = 25
+	EncodingDim2    = 20
+	EncodingDim3    = 15
 	EncodingOptions = 16
 )
 
@@ -52,6 +52,7 @@ func trainEncoderLayer1(e *Encoder, ds, testDs mnist.DataSet) {
 }
 
 func trainEncoderLayer2(e *Encoder, ds, testDs mnist.DataSet) {
+	e.Configure()
 	sampleVecs := func(ds mnist.DataSet) [][]float32 {
 		return makeSampleVecs(ds, BatchSize, func(d mnist.Sample) []float32 {
 			return encodeOneHot(e.EncodeLayer1(d.Intensities))
@@ -71,6 +72,7 @@ func trainEncoderLayer2(e *Encoder, ds, testDs mnist.DataSet) {
 }
 
 func trainEncoderLayer3(e *Encoder, ds, testDs mnist.DataSet) {
+	e.Configure()
 	sampleVecs := func(ds mnist.DataSet) [][]float32 {
 		return makeSampleVecs(ds, BatchSize, func(d mnist.Sample) []float32 {
 			return encodeOneHot(e.EncodeLayer2(e.EncodeLayer1(d.Intensities)))
@@ -142,20 +144,27 @@ type Encoder struct {
 }
 
 func NewEncoder() *Encoder {
-	var sizes []int
-	for i := 0; i < EncodingDim1; i++ {
-		sizes = append(sizes, EncodingOptions)
-	}
 	return &Encoder{
 		Layer1: &seqtree.ClusterEncoder{
 			Loss: seqtree.Sigmoid{},
 		},
-		Layer2: &seqtree.ClusterEncoder{
-			Loss: &seqtree.MultiSoftmax{Sizes: sizes},
-		},
-		Layer3: &seqtree.ClusterEncoder{
-			Loss: &seqtree.MultiSoftmax{Sizes: sizes[:EncodingDim2]},
-		},
+		Layer2: &seqtree.ClusterEncoder{},
+		Layer3: &seqtree.ClusterEncoder{},
+	}
+}
+
+func (e *Encoder) Configure() {
+	var sizes []int
+	for i := 0; i < EncodingDim1; i++ {
+		sizes = append(sizes, EncodingOptions)
+	}
+	e.Layer2.Loss = &seqtree.MultiSoftmax{
+		Sizes:   sizes,
+		Weights: e.Layer1.Weights,
+	}
+	e.Layer3.Loss = &seqtree.MultiSoftmax{
+		Sizes:   sizes[:EncodingDim2],
+		Weights: e.Layer2.Weights,
 	}
 }
 

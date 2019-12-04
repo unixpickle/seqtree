@@ -6,6 +6,7 @@ import (
 	"image/png"
 	"log"
 	"math"
+	"math/rand"
 	"os"
 
 	"github.com/unixpickle/essentials"
@@ -19,11 +20,14 @@ func main() {
 	encoder := NewEncoder()
 	encoder.Layer1.Load("encoder1.json")
 	encoder.Layer2.Load("encoder2.json")
+	encoder.Layer3.Load("encoder3.json")
+	encoder.Configure()
 	if encoder.NeedsTraining() {
 		log.Println("Training encoder...")
 		TrainEncoder(encoder, dataset, testDataset)
 		encoder.Layer1.Save("encoder1.json")
 		encoder.Layer2.Save("encoder2.json")
+		encoder.Layer3.Save("encoder3.json")
 	}
 	log.Println("Saving encoder reconstructions...")
 	GenerateReconstructions(testDataset, encoder)
@@ -64,25 +68,26 @@ func GenerateSamples(e *Encoder, s *SequenceModel) {
 }
 
 func GenerateReconstructions(ds mnist.DataSet, e *Encoder) {
-	mnist.SaveReconstructionGrid("recon.png", func(x []float64) []float64 {
-		vec := e.Decode(e.Encode(x))
-		for i, x := range vec {
-			vec[i] = 1 / (1 + math.Exp(-x))
-		}
-		return vec
-	}, ds, 10, 4)
-	mnist.SaveReconstructionGrid("recon_l1.png", func(x []float64) []float64 {
-		vec := e.DecodeLayer1(e.EncodeLayer1(x))
-		for i, x := range vec {
-			vec[i] = 1 / (1 + math.Exp(-x))
-		}
-		return vec
-	}, ds, 10, 4)
-	mnist.SaveReconstructionGrid("recon_l2.png", func(x []float64) []float64 {
-		vec := e.DecodeLayer1(e.DecodeLayer2(e.EncodeLayer2(e.EncodeLayer1(x))))
-		for i, x := range vec {
-			vec[i] = 1 / (1 + math.Exp(-x))
-		}
-		return vec
-	}, ds, 10, 4)
+	makeRecon := func(name string, f func(x []float64) []float64) {
+		x := rand.Int63()
+		rand.Seed(1337)
+		mnist.SaveReconstructionGrid(name, func(x []float64) []float64 {
+			vec := f(x)
+			for i, x := range vec {
+				vec[i] = 1 / (1 + math.Exp(-x))
+			}
+			return vec
+		}, ds, 10, 4)
+		rand.Seed(x)
+	}
+
+	makeRecon("recon.png", func(x []float64) []float64 {
+		return e.Decode(e.Encode(x))
+	})
+	makeRecon("recon_l1.png", func(x []float64) []float64 {
+		return e.DecodeLayer1(e.EncodeLayer1(x))
+	})
+	makeRecon("recon_l2.png", func(x []float64) []float64 {
+		return e.DecodeLayer1(e.DecodeLayer2(e.EncodeLayer2(e.EncodeLayer1(x))))
+	})
 }
