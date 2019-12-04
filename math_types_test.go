@@ -38,4 +38,12 @@ func TestHessianInverse(t *testing.T) {
 	if residualMag > 1e-4 {
 		t.Errorf("residual error of %f exceeds threshold", residualMag)
 	}
+
+	zeroTarget := make([]float32, hess.Dim)
+	solution = hess.ApplyInverse(zeroTarget)
+	for _, x := range solution {
+		if x != 0 {
+			t.Errorf("expected 0 but got %f", x)
+		}
+	}
 }

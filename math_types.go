@@ -42,20 +42,21 @@ func (h *Hessian) ApplyInverse(b []float32) []float32 {
 	// Hard-limit the number of iterations to avoid bad
 	// computation times for poorly conditioned problems.
 	for i := 0; i < h.Dim*2; i++ {
+		rMag := vectorNormSquared(r)
+		if math.Sqrt(float64(rMag)) <= earlyStopError {
+			break
+		}
+
 		hp := h.Apply(p)
-		a := vectorDot(r, r) / vectorDot(p, hp)
+		a := rMag / vectorDot(p, hp)
 		nextX := addDelta(x, p, a)
 
 		// Use explicit update for r to avoid compounding
 		// error over many updates.
 		nextR := vectorDifference(b, h.Apply(nextX))
-		rMag := vectorNormSquared(nextR)
+		nextRMag := vectorNormSquared(nextR)
 
-		if math.Sqrt(float64(rMag)) < earlyStopError {
-			break
-		}
-
-		beta := rMag / vectorNormSquared(r)
+		beta := nextRMag / rMag
 		nextP := addDelta(nextR, p, beta)
 		x, r, p = nextX, nextR, nextP
 	}
