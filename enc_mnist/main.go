@@ -34,9 +34,8 @@ func main() {
 	seqs := encoder.EncodeBatch(dataset, len(dataset.Samples))
 	testSeqs := encoder.EncodeBatch(testDataset, len(testDataset.Samples))
 	for i := 0; true; i++ {
-		trainStart := (i * 10000) % len(dataset.Samples)
 		testLoss := seqModel.MeanLoss(testSeqs)
-		loss, delta := seqModel.AddTree(seqs[trainStart : trainStart+10000])
+		loss, delta := seqModel.AddTree(seqs)
 		log.Printf("tree %d: loss=%f delta=%f test=%f", seqModel.NumTrees()-1, loss, -delta,
 			testLoss)
 		seqModel.Save("sequence_model.json")

@@ -64,8 +64,13 @@ func (s *SequenceModel) Sample() []int {
 }
 
 func (s *SequenceModel) AddTree(intSeqs [][]int) (loss, delta float32) {
-	const shrinkage = 0.1
 	for _, model := range s.Models {
+		shrinkage := float32(0.1)
+		if len(model.Trees) == 0 {
+			// Take a big initial step.
+			shrinkage = 1.0
+		}
+
 		seqs := make([]seqtree.Sequence, len(intSeqs))
 		for i, intSeq := range intSeqs {
 			seqs[i] = seqtree.Sequence{s.sampleTimestep(model, intSeq)}
