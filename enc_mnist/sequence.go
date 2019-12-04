@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"io/ioutil"
+	"math/rand"
 	"os"
 
 	"github.com/pkg/errors"
@@ -72,10 +73,14 @@ func (s *SequenceModel) AddTree(intSeqs [][]int) (loss, delta float32) {
 		}
 
 		seqs := make([]seqtree.Sequence, len(intSeqs))
+		perm := rand.Perm(len(intSeqs))
 		for i, intSeq := range intSeqs {
-			seqs[i] = seqtree.Sequence{s.sampleTimestep(model, intSeq)}
+			seqs[perm[i]] = seqtree.Sequence{s.sampleTimestep(model, intSeq)}
 		}
 		model.EvaluateAll(seqs)
+
+		trainSeqs := seqs[len(seqs)/2:]
+		validSeqs := seqs[:len(seqs)/2]
 
 		for _, seq := range seqs {
 			loss += seq.MeanLoss(seqtree.Softmax{})
@@ -95,11 +100,11 @@ func (s *SequenceModel) AddTree(intSeqs [][]int) (loss, delta float32) {
 			Heuristic: builder.Heuristic,
 			MaxLeaves: 10,
 		}
-		tree := builder.Build(seqtree.TimestepSamples(seqs))
-		tree = pruner.Prune(seqtree.TimestepSamples(seqs), tree)
-		seqtree.ScaleOptimalStep(seqtree.TimestepSamples(seqs), tree, seqtree.Softmax{},
+		tree := builder.Build(seqtree.TimestepSamples(trainSeqs))
+		tree = pruner.Prune(seqtree.TimestepSamples(validSeqs), tree)
+		seqtree.ScaleOptimalStep(seqtree.TimestepSamples(validSeqs), tree, seqtree.Softmax{},
 			40.0, 10, 30)
-		delta += seqtree.AvgLossDelta(seqtree.TimestepSamples(seqs), tree, seqtree.Softmax{},
+		delta += seqtree.AvgLossDelta(seqtree.TimestepSamples(validSeqs), tree, seqtree.Softmax{},
 			shrinkage)
 		model.Add(tree, shrinkage)
 	}
