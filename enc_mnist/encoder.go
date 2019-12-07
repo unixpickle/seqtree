@@ -38,7 +38,7 @@ func trainEncoderLayer1(e *Encoder, ds, testDs mnist.DataSet) {
 		e.Layer1.AddStage(&seqtree.KMeans{
 			MaxIterations: 100,
 			NumClusters:   EncodingOptions,
-		}, vecs, 0.01)
+		}, vecs)
 		log.Printf("layer 1: step %d: loss=%f test=%f", len(e.Layer1.Stages)-1, loss, testLoss)
 	}
 }
