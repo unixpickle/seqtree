@@ -31,6 +31,10 @@ func trainEncoderLayer1(e *Encoder, ds, testDs mnist.DataSet) {
 		})
 	}
 	for len(e.Layer1.Stages) < EncodingDim1 {
+		shrinkage := float32(0.2)
+		if len(e.Layer1.Stages) == 0 {
+			shrinkage = 1.0
+		}
 		vecs := sampleVecs(ds)
 		testVecs := sampleVecs(testDs)
 		loss := evaluateLoss(e.Layer1, vecs)
@@ -38,7 +42,7 @@ func trainEncoderLayer1(e *Encoder, ds, testDs mnist.DataSet) {
 		e.Layer1.AddStage(&seqtree.KMeans{
 			MaxIterations: 100,
 			NumClusters:   EncodingOptions,
-		}, vecs)
+		}, vecs, shrinkage)
 		log.Printf("layer 1: step %d: loss=%f test=%f", len(e.Layer1.Stages)-1, loss, testLoss)
 	}
 }

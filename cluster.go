@@ -47,7 +47,7 @@ func (c *ClusterEncoder) Load(path string) error {
 	return nil
 }
 
-func (c *ClusterEncoder) AddStage(k *KMeans, data [][]float32) {
+func (c *ClusterEncoder) AddStage(k *KMeans, data [][]float32, shrinkage float32) {
 	zeroOutput := make([]float32, len(data[0]))
 	prevOutputs := make([][]float32, len(data))
 	grads := make([][]float32, len(data))
@@ -112,6 +112,9 @@ func (c *ClusterEncoder) AddStage(k *KMeans, data [][]float32) {
 			scaleOptimalStepCluster(data, targets, delta, c.Loss, 100.0, 50, 0, 0)
 		}
 
+		for i := range delta {
+			delta[i] *= shrinkage
+		}
 		clusters.Deltas[i] = delta
 		for j, x := range data {
 			t := targets[j]
