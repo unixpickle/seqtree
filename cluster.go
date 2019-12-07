@@ -47,7 +47,7 @@ func (c *ClusterEncoder) Load(path string) error {
 	return nil
 }
 
-func (c *ClusterEncoder) AddStage(k *KMeans, data [][]float32) {
+func (c *ClusterEncoder) AddStage(k *KMeans, data [][]float32, errorRate float32) {
 	zeroOutput := make([]float32, len(data[0]))
 	prevOutputs := make([][]float32, len(data))
 	grads := make([][]float32, len(data))
@@ -81,12 +81,9 @@ func (c *ClusterEncoder) AddStage(k *KMeans, data [][]float32) {
 		Deltas:  make([][]float32, len(centers)),
 	}
 
-	clusterData := map[int][][]float32{}
-	clusterTargets := map[int][][]float32{}
-	for i, x := range prevOutputs {
-		idx, _ := clusters.Find(grads[i])
-		clusterData[idx] = append(clusterData[idx], x)
-		clusterTargets[idx] = append(clusterTargets[idx], data[i])
+	clusterIdxs := make([]int, len(prevOutputs))
+	for i, x := range grads {
+		clusterIdxs[i], _ = clusters.Find(x)
 	}
 
 	newLoss := newKahanSum(1)
@@ -96,20 +93,34 @@ func (c *ClusterEncoder) AddStage(k *KMeans, data [][]float32) {
 			delta[i] *= -1
 		}
 
-		data := clusterData[i]
-		targets := clusterTargets[i]
+		var data, targets, otherData, otherTargets [][]float32
+		for j, c := range clusterIdxs {
+			if c == i {
+				data = append(data, prevOutputs[j])
+				targets = append(targets, data[j])
+			} else {
+				otherData = append(otherData, prevOutputs[j])
+				otherTargets = append(otherTargets, data[j])
+			}
+		}
+
+		otherWeight := errorRate * float32(len(otherData)) / float32(len(data))
+
 		if m, ok := c.Loss.(*MultiSoftmax); ok {
 			start := 0
 			for _, s := range m.Sizes {
-				scaleOptimalStepCluster(data, targets, delta, Softmax{}, 100.0, 50, start, s)
+				scaleOptimalStepCluster(data, targets, otherData, otherTargets, delta, Softmax{},
+					100.0, otherWeight, 50, start, s)
 				start += s
 			}
 		} else if _, ok := c.Loss.(Sigmoid); ok {
 			for i := range delta {
-				scaleOptimalStepCluster(data, targets, delta, c.Loss, 100.0, 50, i, 1)
+				scaleOptimalStepCluster(data, targets, otherData, otherTargets, delta, c.Loss,
+					100.0, otherWeight, 50, i, 1)
 			}
 		} else {
-			scaleOptimalStepCluster(data, targets, delta, c.Loss, 100.0, 50, 0, 0)
+			scaleOptimalStepCluster(data, targets, otherData, otherTargets, delta, c.Loss, 100.0,
+				otherWeight, 50, 0, 0)
 		}
 
 		clusters.Deltas[i] = delta

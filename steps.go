@@ -106,8 +106,8 @@ func ScaleOptimalStep(timesteps []*TimestepSample, t *Tree, l LossFunc, maxStep 
 // This can be used to only scale steps within a given
 // range, allowing for efficient steps with MultiSoftmax
 // and other block-diagonal loss functions.
-func scaleOptimalStepCluster(data, targets [][]float32, delta []float32, l LossFunc,
-	maxStep float32, iters, startIdx, length int) {
+func scaleOptimalStepCluster(data, targets, otherData, otherTargets [][]float32, delta []float32,
+	l LossFunc, maxStep, otherWeight float32, iters, startIdx, length int) {
 	if length == 0 {
 		length = len(delta) - startIdx
 	}
@@ -132,6 +132,15 @@ func scaleOptimalStepCluster(data, targets [][]float32, delta []float32, l LossF
 						tmpOutput[k] = x + stepSize*delta[k+startIdx]
 					}
 					tmpAddition[0] = l.Loss(tmpOutput, target)
+					total.Add(tmpAddition)
+				}
+				for j := i; j < len(otherData); j += numProcs {
+					sample := otherData[j][startIdx : startIdx+length]
+					target := otherTargets[j][startIdx : startIdx+length]
+					for k, x := range sample {
+						tmpOutput[k] = x + stepSize*delta[k+startIdx]
+					}
+					tmpAddition[0] = -otherWeight * l.Loss(tmpOutput, target)
 					total.Add(tmpAddition)
 				}
 				lock.Lock()
